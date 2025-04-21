@@ -1,5 +1,3 @@
-# transformadores_veiculos.py
-
 import pandas as pd
 from datetime import datetime
 
@@ -54,12 +52,13 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
 
     alertas = []
 
-    def agrupar_por_chave(df):
-        return df.groupby(df["Chassi"].fillna(df["Placa"]))
+    def agrupar_validos(df):
+        df_validos = df[df["Chassi"].fillna(df["Placa"]).astype(bool)]
+        return df_validos.groupby(df_validos["Chassi"].fillna(df_validos["Placa"]))
 
     for tipo, df in [("Entrada", df_entrada), ("Saída", df_saida)]:
-        duplicados = agrupar_por_chave(df).filter(lambda x: len(x) > 1)
-        for _, grupo in duplicados.groupby(duplicados["Chassi"].fillna(duplicados["Placa"])):
+        duplicados = agrupar_validos(df).filter(lambda x: len(x) > 1)
+        for _, grupo in duplicados.groupby(grupo["Chassi"].fillna(grupo["Placa"])):
             alertas.append({
                 "Tipo": tipo,
                 "Problema": f"{len(grupo)} {tipo.lower()}s para o mesmo chassi/placa",
@@ -70,7 +69,7 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
     chaves_entrada = set(df_entrada["Chassi"].fillna(df_entrada["Placa"]))
     for _, s in df_saida.iterrows():
         chave = s["Chassi"] or s["Placa"]
-        if chave not in chaves_entrada:
+        if chave and chave not in chaves_entrada:
             alertas.append({
                 "Tipo": "Saída",
                 "Problema": "Saída sem correspondente entrada",
@@ -81,7 +80,7 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
     chaves_saida = set(df_saida["Chassi"].fillna(df_saida["Placa"]))
     for _, e in df_entrada.iterrows():
         chave = e["Chassi"] or e["Placa"]
-        if chave not in chaves_saida:
+        if chave and chave not in chaves_saida:
             alertas.append({
                 "Tipo": "Entrada",
                 "Problema": "Entrada sem correspondente saída",
