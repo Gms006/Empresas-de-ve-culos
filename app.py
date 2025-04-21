@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 import tempfile
 import os
+import io
 from estoque_veiculos import processar_arquivos_xml
 from transformadores_veiculos import (
     gerar_estoque_fiscal,
@@ -17,19 +18,6 @@ from transformadores_veiculos import (
 def formatar_df_exibicao(df):
     df = df.copy()
     col_cnpj = [col for col in df.columns if "CNPJ" in col]
-    col_reais = [col for col in df.columns if "Valor" in col or "Total" in col]
-    col_pct = [col for col in df.columns if "Alíquota" in col]
-
-    for col in col_cnpj:
-        df[col] = df[col].astype(str)
-
-    for col in col_reais:
-        df[col] = df[col].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-
-    for col in col_pct:
-        df[col] = df[col].apply(lambda x: f"{x:.2f}%")
-
-    return df
     col_reais = [col for col in df.columns if "Valor" in col or "Total" in col]
     col_pct = [col for col in df.columns if "Alíquota" in col]
 
@@ -101,8 +89,8 @@ if uploaded_files:
         col1.metric("Total Vendido (R$)", f"R$ {kpis['Total Vendido (R$)']:,.2f}")
         col2.metric("Lucro Total (R$)", f"R$ {kpis['Lucro Total (R$)']:,.2f}")
         col3.metric("Estoque Atual (R$)", f"R$ {kpis['Estoque Atual (R$)']:,.2f}")
-# Exportar para Excel com formatação
-        import io
+
+        # Exportar para Excel com formatação
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             df_estoque.to_excel(writer, sheet_name="Estoque", index=False)
@@ -127,4 +115,3 @@ if uploaded_files:
                         worksheet.set_column(col_num, col_num, 18)
 
         st.download_button("📥 Baixar Planilha Completa", data=output.getvalue(), file_name="relatorio_veiculos.xlsx")
-    )
