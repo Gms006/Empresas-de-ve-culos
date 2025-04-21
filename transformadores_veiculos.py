@@ -3,8 +3,24 @@
 import pandas as pd
 from datetime import datetime
 
+# === Classificação de Produto ===
+def classificar_produto_linha(row):
+    chassi = row.get("Chassi", "")
+    produto = row.get("Produto", "").upper()
+    if chassi and len(chassi) >= 8:
+        return "Veículo"
+    if any(palavra in produto for palavra in ["VEICULO", "VEÍCULO", "CARRO", "MOTO", "CAMINHÃO"]):
+        return "Veículo"
+    return "Outro Produto"
+
 # === 1. ESTOQUE FISCAL ===
 def gerar_estoque_fiscal(df_entrada, df_saida):
+    df_entrada["Tipo Produto"] = df_entrada.apply(classificar_produto_linha, axis=1)
+    df_saida["Tipo Produto"] = df_saida.apply(classificar_produto_linha, axis=1)
+
+    df_entrada = df_entrada[df_entrada["Tipo Produto"] == "Veículo"]
+    df_saida = df_saida[df_saida["Tipo Produto"] == "Veículo"]
+
     estoque = []
     entradas = df_entrada.to_dict("records")
     saidas = df_saida.to_dict("records")
@@ -30,12 +46,17 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
 
 # === 2. AUDITORIA ===
 def gerar_alertas_auditoria(df_entrada, df_saida):
+    df_entrada["Tipo Produto"] = df_entrada.apply(classificar_produto_linha, axis=1)
+    df_saida["Tipo Produto"] = df_saida.apply(classificar_produto_linha, axis=1)
+
+    df_entrada = df_entrada[df_entrada["Tipo Produto"] == "Veículo"]
+    df_saida = df_saida[df_saida["Tipo Produto"] == "Veículo"]
+
     alertas = []
 
     def agrupar_por_chave(df):
         return df.groupby(df["Chassi"].fillna(df["Placa"]))
 
-    # Duplicadas
     for tipo, df in [("Entrada", df_entrada), ("Saída", df_saida)]:
         duplicados = agrupar_por_chave(df).filter(lambda x: len(x) > 1)
         for _, grupo in duplicados.groupby(duplicados["Chassi"].fillna(duplicados["Placa"])):
@@ -46,7 +67,6 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
                 "Notas": ", ".join(grupo["Nota Fiscal"].astype(str))
             })
 
-    # Saída sem entrada
     chaves_entrada = set(df_entrada["Chassi"].fillna(df_entrada["Placa"]))
     for _, s in df_saida.iterrows():
         chave = s["Chassi"] or s["Placa"]
@@ -58,7 +78,6 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
                 "Notas": s["Nota Fiscal"]
             })
 
-    # Entrada sem saída (veículo parado)
     chaves_saida = set(df_saida["Chassi"].fillna(df_saida["Placa"]))
     for _, e in df_entrada.iterrows():
         chave = e["Chassi"] or e["Placa"]
