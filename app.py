@@ -35,11 +35,7 @@ Este painel permite o upload de arquivos XML (ou ZIP com XMLs), extração autom
 """)
 
 # Upload dos arquivos
-uploaded_files = st.file_uploader(
-    "Envie arquivos XML ou ZIP com XMLs",
-    type=["xml", "zip"],
-    accept_multiple_files=True
-)
+uploaded_files = st.file_uploader("Envie arquivos XML ou ZIP com XMLs", type=["xml", "zip"], accept_multiple_files=True)
 
 if uploaded_files:
     with st.spinner("🔍 Processando arquivos..."):
