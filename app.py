@@ -13,6 +13,25 @@ from transformadores_veiculos import (
     gerar_resumo_mensal
 )
 
+
+# === FORMATADORES DE VISUALIZAÇÃO ===
+def formatar_df_exibicao(df):
+    df = df.copy()
+    col_cnpj = [col for col in df.columns if "CNPJ" in col]
+    col_reais = [col for col in df.columns if "Valor" in col or "Total" in col]
+    col_pct = [col for col in df.columns if "Alíquota" in col]
+
+    for col in col_cnpj:
+        df[col] = df[col].astype(str)
+
+    for col in col_reais:
+        df[col] = df[col].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+
+    for col in col_pct:
+        df[col] = df[col].apply(lambda x: f"{x:.2f}%")
+
+    return df
+
 st.set_page_config(page_title="Painel de Estoque de Veículos", layout="wide")
 st.title("📦 Painel Fiscal - Veículos")
 
@@ -58,11 +77,11 @@ if uploaded_files:
 
     if aba == "📦 Estoque":
         st.subheader("📦 Veículos em Estoque e Vendidos")
-        st.dataframe(df_estoque, use_container_width=True)
+        st.dataframe(formatar_df_exibicao(df_estoque), use_container_width=True)
 
     elif aba == "🕵️ Auditoria":
         st.subheader("🕵️ Relatório de Alertas Fiscais")
-        st.dataframe(df_alertas, use_container_width=True)
+        st.dataframe(formatar_df_exibicao(df_alertas), use_container_width=True)
 
     elif aba == "📈 KPIs e Resumo":
         st.subheader("📊 Indicadores de Desempenho")
@@ -72,7 +91,7 @@ if uploaded_files:
         col3.metric("Estoque Atual (R$)", f"R$ {kpis['Estoque Atual (R$)']:,.2f}")
 
         st.markdown("### 📆 Resumo Mensal")
-        st.dataframe(df_resumo, use_container_width=True)
+        st.dataframe(formatar_df_exibicao(df_resumo), use_container_width=True)
 
     # Download da planilha consolidada
     def to_excel(dfs: dict):
