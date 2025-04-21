@@ -105,4 +105,31 @@ if uploaded_files:
                     else:
                         worksheet.set_column(col_num, col_num, 18)
 
+# Botão adicional para baixar todas as planilhas juntas
+        output_all = io.BytesIO()
+        with pd.ExcelWriter(output_all, engine='xlsxwriter') as writer:
+            df_entrada.to_excel(writer, sheet_name="Entradas", index=False)
+            df_saida.to_excel(writer, sheet_name="Saídas", index=False)
+            df_estoque.to_excel(writer, sheet_name="Estoque", index=False)
+            df_alertas.to_excel(writer, sheet_name="Auditoria", index=False)
+            df_resumo.to_excel(writer, sheet_name="Resumo", index=False)
+
+            workbook = writer.book
+            real_fmt = workbook.add_format({"num_format": "R$ #,##0.00"})
+            pct_fmt = workbook.add_format({"num_format": "0.00%"})
+            text_fmt = workbook.add_format({"num_format": "@"})
+
+            for sheet in ["Entradas", "Saídas", "Estoque", "Auditoria", "Resumo"]:
+                worksheet = writer.sheets[sheet]
+                for col_num, col_name in enumerate(df_estoque.columns if sheet == "Estoque" else df_entrada.columns):
+                    if "R$" in col_name or "Valor" in col_name or "Total" in col_name or "Lucro" in col_name:
+                        worksheet.set_column(col_num, col_num, 14, real_fmt)
+                    elif "Alíquota" in col_name:
+                        worksheet.set_column(col_num, col_num, 12, pct_fmt)
+                    elif "CNPJ" in col_name:
+                        worksheet.set_column(col_num, col_num, 20, text_fmt)
+                    else:
+                        worksheet.set_column(col_num, col_num, 18)
+
+        st.download_button("📥 Baixar Planilha Completa (Todas Abas)", data=output_all.getvalue(), file_name="relatorio_completo_veiculos.xlsx")
         st.download_button("📥 Baixar Planilha Completa", data=output.getvalue(), file_name="relatorio_veiculos.xlsx")
