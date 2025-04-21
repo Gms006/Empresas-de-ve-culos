@@ -12,6 +12,24 @@ from transformadores_veiculos import (
     gerar_kpis,
     gerar_resumo_mensal
 )
+
+# === FORMATADORES DE VISUALIZAÇÃO ===
+def formatar_df_exibicao(df):
+    df = df.copy()
+    col_cnpj = [col for col in df.columns if "CNPJ" in col]
+    col_reais = [col for col in df.columns if "Valor" in col or "Total" in col]
+    col_pct = [col for col in df.columns if "Alíquota" in col]
+
+    for col in col_cnpj:
+        df[col] = df[col].astype(str)
+
+    for col in col_reais:
+        df[col] = df[col].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+
+    for col in col_pct:
+        df[col] = df[col].apply(lambda x: f"{x:.2f}%")
+
+    return df
     col_reais = [col for col in df.columns if "Valor" in col or "Total" in col]
     col_pct = [col for col in df.columns if "Alíquota" in col]
 
