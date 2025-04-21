@@ -1,19 +1,18 @@
-# transformadores_veiculos.py
-
-import pandas as pd
-from datetime import datetime
 import json
 import os
 
-# === Carregamento dos regex externos ===
 def carregar_regex_config(caminho_json="regex_config.json"):
     if os.path.exists(caminho_json):
         with open(caminho_json, "r", encoding="utf-8") as f:
             return json.load(f)
-    else:
-        return {}
+    return {}
 
 regex_config = carregar_regex_config()
+
+# transformadores_veiculos.py
+
+import pandas as pd
+from datetime import datetime
 
 # === Classificação de Produto ===
 def classificar_produto_linha(row):
@@ -62,7 +61,7 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
     df_saida["Tipo Produto"] = df_saida.apply(classificar_produto_linha, axis=1)
 
     df_entrada = df_entrada[df_entrada["Tipo Produto"] == "Veículo"]
-    df_saida = df_saida[df_entrada["Tipo Produto"] == "Veículo"]
+    df_saida = df_saida[df_saida["Tipo Produto"] == "Veículo"]
 
     alertas = []
 
