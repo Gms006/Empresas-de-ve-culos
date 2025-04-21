@@ -1,5 +1,5 @@
 
-# estoque_veiculos.py - Extrator especializado para empresas de veículos
+# estoque_veiculos.py - Extrator com fallback de chassi e leitura de regex via JSON
 
 import os
 import re
@@ -8,16 +8,9 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 import pandas as pd
 
-# Expressões regulares otimizadas para descrição de veículos
-regex_map = {
-    "chassi": r"(?i)CHASSI[\s.:\\-]*([A-Z0-9]{8,})",
-    "placa": r"(?i)PLACA[\s.:\\-]*([A-Z]{3}[0-9A-Z]{4})",
-    "renavam": r"(?i)RENAVAM[\s.:\\-]*([0-9]{9,})",
-    "ano_modelo": r"(?i)ANO(?:\\s+)?MOD(?:ELO)?[:\\s]*([0-9]{4})",
-    "ano_fabricacao": r"(?i)ANO(?:\\s+)?FAB(?:RICACAO)?[:\\s]*([0-9]{4})",
-    "cor": r"(?i)COR[\s.:\\-]*([A-Z\\s]+)",
-    "km": r"(?i)(?:KM|QUILOMETRAGEM)[\\s.:\\-]*([0-9]{1,7})"
-}
+# Carrega regex externo (regex_config.json)
+with open("regex_veiculos.json", "r", encoding="utf-8") as r:
+    regex_map = json.load(r)
 
 # Carrega config de empresas
 with open("empresas_config.json", "r", encoding="utf-8") as f:
@@ -50,11 +43,20 @@ def processar_arquivos_xml(lista_de_caminhos):
                 texto_livre = infAdProd.text if infAdProd is not None else ""
                 texto_completo = f"{prod.find('ns:xProd', ns).text or ''} {texto_livre}".upper()
 
-                campos_extras = {
-                    campo: re.search(regex, texto_completo).group(1)
-                    if re.search(regex, texto_completo) else ""
-                    for campo, regex in regex_map.items()
-                }
+                campos_extras = {}
+                for campo, padroes in regex_map.items():
+                    campos_extras[campo] = ""
+                    for padrao in padroes:
+                        match = re.search(padrao, texto_completo)
+                        if match:
+                            campos_extras[campo] = match.group(1)
+                            break
+
+                # Fallback: chassi genérico de 17 caracteres
+                if not campos_extras["chassi"]:
+                    match_chassi_livre = re.search(r"(?<![A-Z0-9])[A-HJ-NPR-Z0-9]{17}(?![A-Z0-9])", texto_completo)
+                    if match_chassi_livre:
+                        campos_extras["chassi"] = match_chassi_livre.group(0)
 
                 cnpj_emitente = emit.find("ns:CNPJ", ns).text if emit.find("ns:CNPJ", ns) is not None else ""
                 nome_destinatario = dest.find("ns:xNome", ns).text if dest.find("ns:xNome", ns) is not None else ""
