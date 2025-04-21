@@ -14,6 +14,7 @@ from transformadores_veiculos import (
 )
 
 
+
 # === FORMATADORES DE VISUALIZAÇÃO ===
 def formatar_df_exibicao(df):
     df = df.copy()
