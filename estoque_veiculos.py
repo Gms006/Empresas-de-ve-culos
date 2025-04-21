@@ -5,6 +5,7 @@ import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
 import pandas as pd
+import json
 
 # Expressões regulares para dados livres
 regex_map = {
@@ -28,8 +29,23 @@ def processar_arquivos_xml(lista_de_caminhos):
             ns = {'ns': 'http://www.portalfiscal.inf.br/nfe'}
             infNFe = root.find(".//ns:infNFe", ns)
 
-            tipo_nf = infNFe.find(".//ns:ide/ns:tpNF", ns).text
-            tipo = "Entrada" if tipo_nf == "0" else "Saida"
+
+        # Determinação do tipo com base no CFOP e nome da empresa
+        with open("empresas_config.json", "r", encoding="utf-8") as config_file:
+            config = json.load(config_file)
+        empresa_id = list(config.keys())[0]
+        empresa_info = config[empresa_id]
+        nomes_proprios = [n.upper() for n in empresa_info["nomes_proprios"]]
+
+        cfop = prod.find("ns:CFOP", ns).text
+        destinatario_nome = dest.find("ns:xNome", ns).text if dest is not None else ""
+
+        if cfop.startswith("1") or cfop.startswith("2"):
+            tipo_dinamico = "Entrada"
+        elif any(nome in destinatario_nome.upper() for nome in nomes_proprios):
+            tipo_dinamico = "Entrada"
+        else:
+            tipo_dinamico = "Saída"
 
             data_emissao = infNFe.find(".//ns:ide/ns:dhEmi", ns).text[:10]
             data_emissao = datetime.strptime(data_emissao, "%Y-%m-%d").strftime("%d/%m/%Y")
