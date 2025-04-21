@@ -7,12 +7,7 @@ import tempfile
 import os
 import io
 from estoque_veiculos import processar_arquivos_xml
-from transformadores_veiculos import (
-    gerar_estoque_fiscal,
-    gerar_alertas_auditoria,
-    gerar_kpis,
-    gerar_resumo_mensal
-)
+from transformadores_veiculos import gerar_estoque_fiscal, gerar_alertas_auditoria, gerar_kpis, gerar_resumo_mensal
 
 # === FORMATADORES DE VISUALIZAÇÃO ===
 def formatar_df_exibicao(df):
