@@ -2,22 +2,16 @@
 
 import zipfile
 import pandas as pd
+import streamlit as st
+import tempfile
+import os
 from estoque_veiculos import processar_arquivos_xml
 from transformadores_veiculos import (
     gerar_estoque_fiscal,
+    gerar_alertas_auditoria,
     gerar_kpis,
     gerar_resumo_mensal
 )
-    gerar_kpis,
-    gerar_resumo_mensal
-)
-
-
-
-# === FORMATADORES DE VISUALIZAÇÃO ===
-def formatar_df_exibicao(df):
-    df = df.copy()
-    col_cnpj = [col for col in df.columns if "CNPJ" in col]
     col_reais = [col for col in df.columns if "Valor" in col or "Total" in col]
     col_pct = [col for col in df.columns if "Alíquota" in col]
 
