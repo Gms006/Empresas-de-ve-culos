@@ -10,13 +10,13 @@ import pandas as pd
 
 # Expressões regulares otimizadas para descrição de veículos
 regex_map = {
-    "chassi": r"(?i)CHASSI\s*[:\-–]?\s*([A-Z0-9]{8,})",
-    "placa": r"(?i)PLACA\s*[:\-–]?\s*([A-Z]{3}[0-9A-Z]{4})",
-    "renavam": r"(?i)RENAVAM\s*[:\-–]?\s*(\d{9,})",
-    "ano_modelo": r"(?i)(\d{4})\s*/\s*\d{4}",
-    "ano_fabricacao": r"(?i)\d{4}\s*/\s*(\d{4})",
-    "cor": r"(?i)COR\s*[:\-–]?\s*([A-Z\s]+)",
-    "km": r"(?i)(?:KM|QUILOMETRAGEM)\s*[:\-–]?\s*(\d{1,7})"
+    "chassi": r"(?i)CHASSI[\s.:\\-]*([A-Z0-9]{8,})",
+    "placa": r"(?i)PLACA[\s.:\\-]*([A-Z]{3}[0-9A-Z]{4})",
+    "renavam": r"(?i)RENAVAM[\s.:\\-]*([0-9]{9,})",
+    "ano_modelo": r"(?i)ANO(?:\\s+)?MOD(?:ELO)?[:\\s]*([0-9]{4})",
+    "ano_fabricacao": r"(?i)ANO(?:\\s+)?FAB(?:RICACAO)?[:\\s]*([0-9]{4})",
+    "cor": r"(?i)COR[\s.:\\-]*([A-Z\\s]+)",
+    "km": r"(?i)(?:KM|QUILOMETRAGEM)[\\s.:\\-]*([0-9]{1,7})"
 }
 
 # Carrega config de empresas
