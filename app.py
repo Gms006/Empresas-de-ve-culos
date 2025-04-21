@@ -5,11 +5,9 @@ import pandas as pd
 from estoque_veiculos import processar_arquivos_xml
 from transformadores_veiculos import (
     gerar_estoque_fiscal,
-    gerar_alertas_auditoria,
     gerar_kpis,
     gerar_resumo_mensal
 )
-    gerar_alertas_auditoria,
     gerar_kpis,
     gerar_resumo_mensal
 )
@@ -117,8 +115,4 @@ if uploaded_files:
                         worksheet.set_column(col_num, col_num, 18)
 
         st.download_button("📥 Baixar Planilha Completa", data=output.getvalue(), file_name="relatorio_veiculos.xlsx")
-            "Auditoria": df_alertas,
-            "ResumoMensal": df_resumo
-        }),
-        file_name="relatorio_veiculos.xlsx"
     )
