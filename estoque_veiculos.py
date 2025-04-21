@@ -1,4 +1,4 @@
-# extrator.py (refatorado para uso com Streamlit, modularizado e pronto para GitHub)
+# extrator.py - Extrator genérico e robusto de XMLs NF-e
 
 import os
 import re
@@ -6,107 +6,82 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 import pandas as pd
 
-cfop_reentrada = {"1102", "1202", "2102"}
+# Expressões regulares para dados livres
+regex_map = {
+    "chassi": r"CHASSI\s*[:\-]?\s*([A-Z0-9]{8,})",
+    "placa": r"PLACA\s*[:\-]?\s*([A-Z]{3}[0-9A-Z]{4})",
+    "renavam": r"RENAVAM\s*[:\-]?\s*(\d{9,})",
+    "ano_modelo": r"(\d{4})/\d{4}",
+    "ano_fabricacao": r"\d{4}/(\d{4})",
+    "cor": r"COR\s*[:\-]?\s*([A-Z\s]+)",
+    "km": r"KM\s*[:\-]?\s*(\d+)"
+}
 
-# === Utilitários ===
-def format_brl(value):
-    return f"{float(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-def format_brl_float(value):
-    return float(str(value).replace(".", "").replace(",", "."))
-
-def extrair_placa_chassi(texto):
-    placa = chassi = ""
-    if texto:
-        placa_match = re.search(r"PLACA\s*[:\-]?\s*([A-Z]{3}[0-9A-Z]{4})", texto, re.IGNORECASE)
-        chassi_match = re.search(r"CHASSI\s*[:\-]?\s*([A-Z0-9]{8,})", texto, re.IGNORECASE)
-        if placa_match:
-            placa = placa_match.group(1)
-        if chassi_match:
-            chassi = chassi_match.group(1)
-    return placa, chassi
-
-def extrair_dados_xml(path, tipo):
-    try:
-        tree = ET.parse(path)
-        root = tree.getroot()
-        ns = {'ns': 'http://www.portalfiscal.inf.br/nfe'}
-        infNFe = root.find(".//ns:infNFe", ns)
-
-        data_emissao = datetime.strptime(infNFe.find("./ns:ide/ns:dhEmi", ns).text[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
-        destinatario = infNFe.find("./ns:dest/ns:xNome", ns).text
-        numero_nf = infNFe.find("./ns:ide/ns:nNF", ns).text
-        cfop = infNFe.find(".//ns:det/ns:prod/ns:CFOP", ns).text
-        produto = infNFe.find(".//ns:det/ns:prod/ns:xProd", ns).text
-        valor_produto = infNFe.find(".//ns:det/ns:prod/ns:vProd", ns).text
-        valor_total = infNFe.find(".//ns:total/ns:ICMSTot/ns:vNF", ns).text
-
-        inf_ad_prod = infNFe.find(".//ns:det/ns:infAdProd", ns)
-        texto_inf_ad = inf_ad_prod.text if inf_ad_prod is not None else ""
-        texto_comb = f"{produto} ; {texto_inf_ad}"
-
-        placa, chassi = extrair_placa_chassi(texto_comb)
-
-        destino_final = "Entrada" if (tipo == "Entrada" or cfop in cfop_reentrada) else "Saida"
-
-        return {
-            "Data": data_emissao,
-            "Destinatario": destinatario,
-            "Nota Fiscal": numero_nf,
-            "Produto": produto,
-            "Valor Produto": format_brl(valor_produto),
-            "Valor Total": format_brl(valor_total),
-            "Valor Total Float": float(valor_total),
-            "CFOP": cfop,
-            "Placa": placa,
-            "Chassi": chassi,
-            "Tipo": destino_final
-        }
-
-    except Exception as e:
-        return None
-
-def gerar_estoque_fiscal(df_entrada, df_saida):
-    estoque = []
-    entradas = df_entrada.to_dict("records")
-    saidas = df_saida.to_dict("records")
-
-    for ent in entradas:
-        chave = ent["Chassi"] or ent["Placa"]
-        saida_match = next((s for s in saidas if (s["Chassi"] or s["Placa"]) == chave), None)
-        item = {
-            "Produto": ent["Produto"],
-            "Chassi": ent["Chassi"],
-            "Placa": ent["Placa"],
-            "NF Entrada": ent["Nota Fiscal"],
-            "Data Entrada": ent["Data"],
-            "Valor Entrada": ent["Valor Total"],
-            "NF Saída": saida_match["Nota Fiscal"] if saida_match else "",
-            "Data Saída": saida_match["Data"] if saida_match else "",
-            "Valor Venda": saida_match["Valor Total"] if saida_match else "",
-            "Lucro": (
-                format_brl(float(saida_match["Valor Total Float"]) - float(ent["Valor Total Float"]))
-                if saida_match else ""
-            ),
-            "Situação": "Vendido" if saida_match else "Em Estoque"
-        }
-        estoque.append(item)
-    return pd.DataFrame(estoque)
-
+# === Função principal ===
 def processar_arquivos_xml(lista_de_caminhos):
     entradas, saidas = [], []
 
     for caminho in lista_de_caminhos:
-        tipo = "Entrada" if "entrada" in caminho.lower() else "Saida"
-        dados = extrair_dados_xml(caminho, tipo)
-        if dados:
-            if dados["Tipo"] == "Entrada":
-                entradas.append(dados)
-            else:
-                saidas.append(dados)
+        try:
+            tree = ET.parse(caminho)
+            root = tree.getroot()
+            ns = {'ns': 'http://www.portalfiscal.inf.br/nfe'}
+            infNFe = root.find(".//ns:infNFe", ns)
 
-    df_entrada = pd.DataFrame(entradas)
-    df_saida = pd.DataFrame(saidas)
-    df_estoque = gerar_estoque_fiscal(df_entrada, df_saida)
+            tipo_nf = infNFe.find(".//ns:ide/ns:tpNF", ns).text
+            tipo = "Entrada" if tipo_nf == "0" else "Saida"
 
-    return df_entrada, df_saida, df_estoque
+            data_emissao = infNFe.find(".//ns:ide/ns:dhEmi", ns).text[:10]
+            data_emissao = datetime.strptime(data_emissao, "%Y-%m-%d").strftime("%d/%m/%Y")
+
+            emit = infNFe.find(".//ns:emit", ns)
+            dest = infNFe.find(".//ns:dest", ns)
+            produtos = infNFe.findall(".//ns:det", ns)
+
+            for det in produtos:
+                prod = det.find("ns:prod", ns)
+                imposto = det.find("ns:imposto", ns)
+                infAdProd = det.find("ns:infAdProd", ns)
+                texto_livre = infAdProd.text if infAdProd is not None else ""
+                texto_completo = f"{prod.find('ns:xProd', ns).text or ''} {texto_livre}".upper()
+
+                campos_extras = {
+                    campo: re.search(regex, texto_completo).group(1)
+                    if re.search(regex, texto_completo) else ""
+                    for campo, regex in regex_map.items()
+                }
+
+                linha = {
+                    "Tipo": tipo,
+                    "Data Emissão": data_emissao,
+                    "Nota Fiscal": infNFe.find(".//ns:ide/ns:nNF", ns).text,
+                    "Série": infNFe.find(".//ns:ide/ns:serie", ns).text,
+                    "CFOP": prod.find("ns:CFOP", ns).text,
+                    "Produto": prod.find("ns:xProd", ns).text,
+                    "Código Produto": prod.find("ns:cProd", ns).text,
+                    "Quantidade": prod.find("ns:qCom", ns).text,
+                    "Valor Unitário": prod.find("ns:vUnCom", ns).text,
+                    "Valor Total": prod.find("ns:vProd", ns).text,
+                    "Emitente CNPJ": emit.find("ns:CNPJ", ns).text if emit.find("ns:CNPJ", ns) is not None else '',
+                    "Emitente Nome": emit.find("ns:xNome", ns).text,
+                    "Destinatário CNPJ": dest.find("ns:CNPJ", ns).text if dest.find("ns:CNPJ", ns) is not None else '',
+                    "Destinatário Nome": dest.find("ns:xNome", ns).text,
+                    "Texto Descritivo": texto_completo,
+                    "Chassi": campos_extras["chassi"],
+                    "Placa": campos_extras["placa"],
+                    "Renavam": campos_extras["renavam"],
+                    "Ano Modelo": campos_extras["ano_modelo"],
+                    "Ano Fabricação": campos_extras["ano_fabricacao"],
+                    "Cor": campos_extras["cor"],
+                    "KM": campos_extras["km"]
+                }
+
+                if tipo == "Entrada":
+                    entradas.append(linha)
+                else:
+                    saidas.append(linha)
+
+        except Exception as e:
+            print(f"Erro ao processar {caminho}: {e}")
+
+    return pd.DataFrame(entradas), pd.DataFrame(saidas)
