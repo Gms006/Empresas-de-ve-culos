@@ -82,7 +82,7 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
             "Ano Modelo": ent.get("Ano Modelo"),
             "Ano Fabricação": ent.get("Ano Fabricação")
         }
-    
+
             "Produto": ent.get("Produto"),
             "Chassi": ent.get("Chassi"),
             "Placa": ent.get("Placa"),
