@@ -106,4 +106,15 @@ def processar_arquivos_xml(lista_de_caminhos):
         except Exception as e:
             print(f"Erro ao processar {caminho}: {e}")
 
+
+    try:
+        with open("ordem_colunas.json", "r", encoding="utf-8") as f:
+            ordem = json.load(f)["ordem_preferida"]
+        colunas_entrada = [c for c in ordem if c in df_entrada.columns] + [c for c in df_entrada.columns if c not in ordem]
+        colunas_saida = [c for c in ordem if c in df_saida.columns] + [c for c in df_saida.columns if c not in ordem]
+        df_entrada = df_entrada[colunas_entrada]
+        df_saida = df_saida[colunas_saida]
+    except Exception as e:
+        print("Erro ao reordenar colunas:", e)
+
     return pd.DataFrame(entradas), pd.DataFrame(saidas)
