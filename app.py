@@ -10,20 +10,43 @@ from estoque_veiculos import processar_arquivos_xml
 from transformadores_veiculos import gerar_estoque_fiscal, gerar_alertas_auditoria, gerar_kpis, gerar_resumo_mensal
 
 # === FORMATADORES DE VISUALIZAÇÃO ===
+
+# === FORMATADORES COM JSON ===
+import json
+
+with open("formato_colunas.json", "r", encoding="utf-8") as f:
+    formato = json.load(f)
+with open("ordem_colunas.json", "r", encoding="utf-8") as f:
+    ordem = json.load(f)
+
 def formatar_df_exibicao(df):
     df = df.copy()
-    col_cnpj = [col for col in df.columns if "CNPJ" in col]
-    col_reais = [col for col in df.columns if "Valor" in col or "Total" in col]
-    col_pct = [col for col in df.columns if "Alíquota" in col]
+    colunas = df.columns.tolist()
 
-    for col in col_cnpj:
-        df[col] = df[col].astype(str)
+    if 'ordem_preferida' in ordem:
+        ordem_padrao = [col for col in ordem['ordem_preferida'] if col in colunas]
+        extras = [col for col in colunas if col not in ordem_padrao]
+        df = df[ordem_padrao + extras]
 
-    for col in col_reais:
-        df[col] = df[col].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    for col in formato.get("texto", []):
+        if col in df.columns:
+            df[col] = df[col].astype(str)
 
-    for col in col_pct:
-        df[col] = df[col].apply(lambda x: f"{x:.2f}%")
+    for col in formato.get("moeda", []):
+        for c in df.columns:
+            if col in c:
+                df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0.0)
+                df[c] = df[c].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+
+    for col in formato.get("percentual", []):
+        for c in df.columns:
+            if col in c:
+                df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0.0)
+                df[c] = df[c].apply(lambda x: f"{x:.2f}%")
+
+    for col in formato.get("inteiro", []):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
 
     return df
 
@@ -105,31 +128,4 @@ if uploaded_files:
                     else:
                         worksheet.set_column(col_num, col_num, 18)
 
-# Botão adicional para baixar todas as planilhas juntas
-        output_all = io.BytesIO()
-        with pd.ExcelWriter(output_all, engine='xlsxwriter') as writer:
-            df_entrada.to_excel(writer, sheet_name="Entradas", index=False)
-            df_saida.to_excel(writer, sheet_name="Saídas", index=False)
-            df_estoque.to_excel(writer, sheet_name="Estoque", index=False)
-            df_alertas.to_excel(writer, sheet_name="Auditoria", index=False)
-            df_resumo.to_excel(writer, sheet_name="Resumo", index=False)
-
-            workbook = writer.book
-            real_fmt = workbook.add_format({"num_format": "R$ #,##0.00"})
-            pct_fmt = workbook.add_format({"num_format": "0.00%"})
-            text_fmt = workbook.add_format({"num_format": "@"})
-
-            for sheet in ["Entradas", "Saídas", "Estoque", "Auditoria", "Resumo"]:
-                worksheet = writer.sheets[sheet]
-                for col_num, col_name in enumerate(df_estoque.columns if sheet == "Estoque" else df_entrada.columns):
-                    if "R$" in col_name or "Valor" in col_name or "Total" in col_name or "Lucro" in col_name:
-                        worksheet.set_column(col_num, col_num, 14, real_fmt)
-                    elif "Alíquota" in col_name:
-                        worksheet.set_column(col_num, col_num, 12, pct_fmt)
-                    elif "CNPJ" in col_name:
-                        worksheet.set_column(col_num, col_num, 20, text_fmt)
-                    else:
-                        worksheet.set_column(col_num, col_num, 18)
-
-        st.download_button("📥 Baixar Planilha Completa (Todas Abas)", data=output_all.getvalue(), file_name="relatorio_completo_veiculos.xlsx")
         st.download_button("📥 Baixar Planilha Completa", data=output.getvalue(), file_name="relatorio_veiculos.xlsx")
