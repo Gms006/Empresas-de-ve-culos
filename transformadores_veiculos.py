@@ -17,16 +17,26 @@ from datetime import datetime
 
 # === Classificação de Produto ===
 
+
 def classificar_produto_linha(row):
     chassi = row.get("Chassi", "")
     placa = row.get("Placa", "")
     produto = str(row.get("Produto", "")).upper()
 
+    # Lista de termos que indicam que não é um veículo
+    blacklist = ["PLACA DE CARRO", "PLACA MOTO", "CARREGADOR", "ETIQUETA", "ADESIVO", "TAMPA", "SUPORTE", "CAIXA", "CORDÃO"]
+
+    if any(palavra in produto for palavra in blacklist):
+        return "Outro Produto"
+
     if validar_chassi(chassi) or validar_placa(placa):
         return "Veículo"
+    
     if any(palavra in produto for palavra in ["VEICULO", "VEÍCULO", "CARRO", "MOTO", "CAMINHÃO"]):
         return "Veículo"
+    
     return "Outro Produto"
+
 # === 1. ESTOQUE FISCAL ===
 def gerar_estoque_fiscal(df_entrada, df_saida):
     df_entrada["Tipo Produto"] = df_entrada.apply(classificar_produto_linha, axis=1)
