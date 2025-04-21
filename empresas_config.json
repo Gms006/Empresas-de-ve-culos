@@ -1,12 +1,15 @@
 {
   "bda": {
     "nome": "BDA COMERCIO",
-    "cnpj_emitentes": ["41492247000150"],
-    "nomes_proprios": ["BDA COMERCIO", "BDA COMÉRCIO"]
-  },
-  "neto": {
-    "nome": "NETO CONTABILIDADE",
-    "cnpj_emitentes": ["12345678000100"],
-    "nomes_proprios": ["NETO CONTABILIDADE"]
+    "cnpj_emitentes": [
+      "41492247000150"
+    ],
+    "nomes_proprios": [
+      "BDA COMERCIO",
+      "BDA COM\u00c9RCIO",
+      "BDA COMERCIO E INTERMEDIACAO DE VEICULOS LTDA",
+      "BDA COMERCIO E INTERMEDIA\u00c7\u00c3O DE VEICULOS LTDA",
+      "BDA COMERCIO E INTERMED DE VEICULOS LTDA"
+    ]
   }
 }
