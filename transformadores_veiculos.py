@@ -1,3 +1,5 @@
+# transformadores_veiculos.py
+
 import pandas as pd
 from datetime import datetime
 
@@ -58,7 +60,7 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
 
     for tipo, df in [("Entrada", df_entrada), ("Saída", df_saida)]:
         duplicados = agrupar_validos(df).filter(lambda x: len(x) > 1)
-        for _, grupo in duplicados.groupby(grupo["Chassi"].fillna(grupo["Placa"])):
+        for _, grupo in duplicados.groupby(duplicados["Chassi"].fillna(duplicados["Placa"])):
             alertas.append({
                 "Tipo": tipo,
                 "Problema": f"{len(grupo)} {tipo.lower()}s para o mesmo chassi/placa",
