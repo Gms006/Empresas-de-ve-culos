@@ -1,19 +1,47 @@
+import json
 # transformadores_veiculos.py
 
 import re
 import pandas as pd
 from datetime import datetime
 
+
+with open("validador_veiculo.json", "r", encoding="utf-8") as f:
+    validadores = json.load(f)
+
 def validar_chassi(chassi):
-    return isinstance(chassi, str) and bool(re.match(r"^[A-HJ-NPR-Z0-9]{17}$", chassi))
+    padrao = validadores.get("chassi")
+    return isinstance(chassi, str) and bool(re.match(padrao, chassi))
 
 def validar_placa(placa):
-    return isinstance(placa, str) and (
-        bool(re.match(r"^[A-Z]{3}[0-9]{4}$", placa)) or
-        bool(re.match(r"^[A-Z]{3}[0-9][A-Z][0-9]{2}$", placa))
-    )
+    padrao1 = validadores.get("placa_mercosul")
+    padrao2 = validadores.get("placa_antiga")
+    return isinstance(placa, str) and (re.match(padrao1, placa) or re.match(padrao2, placa))
+
+
+with open("classificacao_produto.json", "r", encoding="utf-8") as f:
+    classificacao = json.load(f)
+
+veiculo_keywords = classificacao.get("veiculo_keywords", [])
+blacklist = classificacao.get("blacklist", [])
 
 def classificar_produto_linha(row):
+    chassi = row.get("Chassi", "")
+    placa = row.get("Placa", "")
+    produto = str(row.get("Produto", "")).upper()
+
+    if any(palavra in produto for palavra in blacklist):
+        return "Outro Produto"
+
+    if validar_chassi(chassi) or validar_placa(placa):
+        return "Veículo"
+
+    if any(palavra in produto for palavra in veiculo_keywords):
+        return "Veículo"
+
+    return "Outro Produto"
+
+row):
     chassi = row.get("Chassi", "")
     placa = row.get("Placa", "")
     produto = str(row.get("Produto", "")).upper()
