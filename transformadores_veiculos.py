@@ -17,26 +17,16 @@ from datetime import datetime
 
 # === Classificação de Produto ===
 
-
 def classificar_produto_linha(row):
     chassi = row.get("Chassi", "")
     placa = row.get("Placa", "")
     produto = str(row.get("Produto", "")).upper()
 
-    # Lista de termos que indicam que não é um veículo
-    blacklist = ["PLACA DE CARRO", "PLACA MOTO", "CARREGADOR", "ETIQUETA", "ADESIVO", "TAMPA", "SUPORTE", "CAIXA", "CORDÃO"]
-
-    if any(palavra in produto for palavra in blacklist):
-        return "Outro Produto"
-
     if validar_chassi(chassi) or validar_placa(placa):
         return "Veículo"
-    
     if any(palavra in produto for palavra in ["VEICULO", "VEÍCULO", "CARRO", "MOTO", "CAMINHÃO"]):
         return "Veículo"
-    
     return "Outro Produto"
-
 # === 1. ESTOQUE FISCAL ===
 def gerar_estoque_fiscal(df_entrada, df_saida):
     df_entrada["Tipo Produto"] = df_entrada.apply(classificar_produto_linha, axis=1)
@@ -53,7 +43,46 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
         chave = ent.get("Chassi") or ent.get("Placa")
         saida_match = next((s for s in saidas if (s.get("Chassi") or s.get("Placa")) == chave), None)
 
+
+        try:
+            valor_entrada = float(ent.get("Valor Entrada", 0))
+        except:
+            valor_entrada = 0.0
+        try:
+            valor_venda = float(saida_match.get("Valor Total", 0)) if saida_match else 0.0
+        except:
+            valor_venda = 0.0
+
         item = {
+            "Produto": ent.get("Produto"),
+            "Chassi": ent.get("Chassi"),
+            "Placa": ent.get("Placa"),
+            "Data Entrada": ent.get("Data Emissão"),
+            "Valor Entrada": valor_entrada,
+            "Data Saída": saida_match.get("Data Emissão") if saida_match else "",
+            "Valor Venda": valor_venda,
+            "Lucro": valor_venda - valor_entrada,
+            "Situação": "Vendido" if saida_match else "Em Estoque",
+            "CFOP": ent.get("CFOP"),
+            "CFOP Válido?": ent.get("CFOP Válido?"),
+            "Tipo Operação Fiscal": ent.get("Tipo Operação Fiscal"),
+            "Emitente CNPJ": ent.get("Emitente CNPJ"),
+            "Destinatário CNPJ": ent.get("Destinatário CNPJ"),
+            "ICMS Valor (R$)": float(ent.get("ICMS Valor (R$)", 0)),
+            "ICMS Alíquota (%)": float(ent.get("ICMS Alíquota (%)", 0)),
+            "ICMS CST": ent.get("ICMS CST"),
+            "ICMS CSOSN": ent.get("ICMS CSOSN"),
+            "ICMS Base Cálculo": float(ent.get("ICMS Base Cálculo", 0)),
+            "PIS Valor (R$)": float(ent.get("PIS Valor (R$)", 0)),
+            "PIS Alíquota (%)": float(ent.get("PIS Alíquota (%)", 0)),
+            "COFINS Valor (R$)": float(ent.get("COFINS Valor (R$)", 0)),
+            "COFINS Alíquota (%)": float(ent.get("COFINS Alíquota (%)", 0)),
+            "NCM": ent.get("NCM"),
+            "KM": ent.get("KM"),
+            "Ano Modelo": ent.get("Ano Modelo"),
+            "Ano Fabricação": ent.get("Ano Fabricação")
+        }
+    
             "Produto": ent.get("Produto"),
             "Chassi": ent.get("Chassi"),
             "Placa": ent.get("Placa"),
