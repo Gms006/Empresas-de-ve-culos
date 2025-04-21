@@ -1,18 +1,32 @@
+
+import re
+
+def validar_chassi(chassi):
+    return isinstance(chassi, str) and bool(re.match(r"^[A-HJ-NPR-Z0-9]{17}$", chassi))
+
+def validar_placa(placa):
+    return isinstance(placa, str) and (
+        bool(re.match(r"^[A-Z]{3}[0-9]{4}$", placa)) or
+        bool(re.match(r"^[A-Z]{3}[0-9][A-Z][0-9]{2}$", placa))
+    )
+
 # transformadores_veiculos.py
 
 import pandas as pd
 from datetime import datetime
 
 # === Classificação de Produto ===
+
 def classificar_produto_linha(row):
     chassi = row.get("Chassi", "")
-    produto = row.get("Produto", "").upper()
-    if chassi and len(chassi) >= 8:
+    placa = row.get("Placa", "")
+    produto = str(row.get("Produto", "")).upper()
+
+    if validar_chassi(chassi) or validar_placa(placa):
         return "Veículo"
     if any(palavra in produto for palavra in ["VEICULO", "VEÍCULO", "CARRO", "MOTO", "CAMINHÃO"]):
         return "Veículo"
     return "Outro Produto"
-
 # === 1. ESTOQUE FISCAL ===
 def gerar_estoque_fiscal(df_entrada, df_saida):
     df_entrada["Tipo Produto"] = df_entrada.apply(classificar_produto_linha, axis=1)
