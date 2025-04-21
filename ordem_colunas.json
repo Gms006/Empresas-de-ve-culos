@@ -1,0 +1,33 @@
+{
+  "ordem_preferida": [
+    "Nota Fiscal",
+    "S\u00e9rie",
+    "Data Emiss\u00e3o",
+    "CFOP",
+    "Produto",
+    "C\u00f3digo Produto",
+    "Quantidade",
+    "Valor Unit\u00e1rio",
+    "Valor Total",
+    "Chassi",
+    "Placa",
+    "Renavam",
+    "Emitente Nome",
+    "Emitente CNPJ",
+    "Destinat\u00e1rio Nome",
+    "Destinat\u00e1rio CNPJ",
+    "ICMS CST",
+    "ICMS CSOSN",
+    "ICMS Valor (R$)",
+    "ICMS Al\u00edquota (%)",
+    "ICMS Base C\u00e1lculo",
+    "PIS Valor (R$)",
+    "PIS Al\u00edquota (%)",
+    "COFINS Valor (R$)",
+    "COFINS Al\u00edquota (%)",
+    "NCM",
+    "KM",
+    "Ano Modelo",
+    "Ano Fabrica\u00e7\u00e3o"
+  ]
+}

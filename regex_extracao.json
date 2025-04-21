@@ -1,0 +1,9 @@
+{
+  "chassi": "CHASSI\\s*[:\\-]?\\s*([A-Z0-9]{8,})",
+  "placa": "PLACA\\s*[:\\-]?\\s*([A-Z]{3}[0-9A-Z]{4})",
+  "renavam": "RENAVAM\\s*[:\\-]?\\s*(\\d{9,})",
+  "ano_modelo": "(\\d{4})/\\d{4}",
+  "ano_fabricacao": "\\d{4}/(\\d{4})",
+  "cor": "COR\\s*[:\\-]?\\s*([A-Z\\s]+)",
+  "km": "KM\\s*[:\\-]?\\s*(\\d+)"
+}

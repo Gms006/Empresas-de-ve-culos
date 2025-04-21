@@ -1,0 +1,17 @@
+{
+  "veiculo_keywords": [
+    "VEICULO",
+    "VE\u00cdCULO",
+    "CARRO",
+    "MOTO",
+    "CAMINH\u00c3O"
+  ],
+  "blacklist": [
+    "PLACA DE CARRO",
+    "PLACA MOTO",
+    "CARREGADOR",
+    "ETIQUETA",
+    "ADESIVO",
+    "CAIXA"
+  ]
+}
