@@ -1,13 +1,14 @@
 # app.py - Painel Streamlit para Estoque de Veículos
 
-import streamlit as st
-import os
-import tempfile
 import zipfile
 import pandas as pd
 from estoque_veiculos import processar_arquivos_xml
 from transformadores_veiculos import (
     gerar_estoque_fiscal,
+    gerar_alertas_auditoria,
+    gerar_kpis,
+    gerar_resumo_mensal
+)
     gerar_alertas_auditoria,
     gerar_kpis,
     gerar_resumo_mensal
