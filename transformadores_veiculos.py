@@ -1,14 +1,3 @@
-import json
-import os
-
-def carregar_regex_config(caminho_json="regex_config.json"):
-    if os.path.exists(caminho_json):
-        with open(caminho_json, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-regex_config = carregar_regex_config()
-
 # transformadores_veiculos.py
 
 import pandas as pd
@@ -56,6 +45,7 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     return pd.DataFrame(estoque)
 
 # === 2. AUDITORIA ===
+
 def gerar_alertas_auditoria(df_entrada, df_saida):
     df_entrada["Tipo Produto"] = df_entrada.apply(classificar_produto_linha, axis=1)
     df_saida["Tipo Produto"] = df_saida.apply(classificar_produto_linha, axis=1)
@@ -69,41 +59,65 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
         df_validos = df[df["Chassi"].fillna(df["Placa"]).astype(bool)]
         return df_validos.groupby(df_validos["Chassi"].fillna(df_validos["Placa"]))
 
+    # Duplicidade
     for tipo, df in [("Entrada", df_entrada), ("Saída", df_saida)]:
         duplicados = agrupar_validos(df).filter(lambda x: len(x) > 1)
         for _, grupo in duplicados.groupby(duplicados["Chassi"].fillna(duplicados["Placa"])):
             alertas.append({
                 "Tipo": tipo,
-                "Problema": f"{len(grupo)} {tipo.lower()}s para o mesmo chassi/placa",
+                "Erro": "Duplicidade",
+                "Categoria": "Erro Crítico",
                 "Chassi/Placa": grupo["Chassi"].iloc[0] or grupo["Placa"].iloc[0],
                 "Notas": ", ".join(grupo["Nota Fiscal"].astype(str))
             })
 
+    # Saída sem entrada
     chaves_entrada = set(df_entrada["Chassi"].fillna(df_entrada["Placa"]))
     for _, s in df_saida.iterrows():
         chave = s["Chassi"] or s["Placa"]
         if chave and chave not in chaves_entrada:
             alertas.append({
                 "Tipo": "Saída",
-                "Problema": "Saída sem correspondente entrada",
+                "Erro": "Saída sem entrada",
+                "Categoria": "Erro Crítico",
                 "Chassi/Placa": chave,
                 "Notas": s["Nota Fiscal"]
             })
 
+    # Entrada sem saída
     chaves_saida = set(df_saida["Chassi"].fillna(df_saida["Placa"]))
     for _, e in df_entrada.iterrows():
         chave = e["Chassi"] or e["Placa"]
         if chave and chave not in chaves_saida:
             alertas.append({
                 "Tipo": "Entrada",
-                "Problema": "Entrada sem correspondente saída",
+                "Erro": "Entrada sem saída",
+                "Categoria": "Erro Informativo",
                 "Chassi/Placa": chave,
                 "Notas": e["Nota Fiscal"]
             })
 
-    return pd.DataFrame(alertas)
+    # Entrada sem chassi/placa
+    for _, e in df_entrada[df_entrada["Chassi"].eq("") & df_entrada["Placa"].eq("")].iterrows():
+        alertas.append({
+            "Tipo": "Entrada",
+            "Erro": "Sem chassi ou placa",
+            "Categoria": "Erro Informativo",
+            "Chassi/Placa": "",
+            "Notas": e["Nota Fiscal"]
+        })
 
-# === 3. KPIs GERAIS ===
+    # Saída sem chassi/placa
+    for _, s in df_saida[df_saida["Chassi"].eq("") & df_saida["Placa"].eq("")].iterrows():
+        alertas.append({
+            "Tipo": "Saída",
+            "Erro": "Sem chassi ou placa",
+            "Categoria": "Erro Informativo",
+            "Chassi/Placa": "",
+            "Notas": s["Nota Fiscal"]
+        })
+
+    return pd.DataFrame(alertas)
 def gerar_kpis(df_estoque):
     vendidos = df_estoque[df_estoque["Situação"] == "Vendido"]
     em_estoque = df_estoque[df_estoque["Situação"] == "Em Estoque"]
