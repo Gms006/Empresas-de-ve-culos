@@ -91,26 +91,32 @@ if uploaded_files:
         col1.metric("Total Vendido (R$)", f"R$ {kpis['Total Vendido (R$)']:,.2f}")
         col2.metric("Lucro Total (R$)", f"R$ {kpis['Lucro Total (R$)']:,.2f}")
         col3.metric("Estoque Atual (R$)", f"R$ {kpis['Estoque Atual (R$)']:,.2f}")
+# Exportar para Excel com formatação
+        import io
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df_estoque.to_excel(writer, sheet_name="Estoque", index=False)
+            df_alertas.to_excel(writer, sheet_name="Auditoria", index=False)
+            df_resumo.to_excel(writer, sheet_name="Resumo", index=False)
 
-        st.markdown("### 📆 Resumo Mensal")
-        st.dataframe(formatar_df_exibicao(df_resumo), use_container_width=True)
+            workbook = writer.book
+            real_fmt = workbook.add_format({"num_format": "R$ #,##0.00"})
+            pct_fmt = workbook.add_format({"num_format": "0.00%"})
+            text_fmt = workbook.add_format({"num_format": "@"})
 
-    # Download da planilha consolidada
-    def to_excel(dfs: dict):
-        from io import BytesIO
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-            for name, df in dfs.items():
-                df.to_excel(writer, sheet_name=name[:31], index=False)
-        output.seek(0)
-        return output
+            for sheet in ["Estoque", "Auditoria", "Resumo"]:
+                worksheet = writer.sheets[sheet]
+                for col_num, col_name in enumerate(df_estoque.columns):
+                    if "R$" in col_name or "Valor" in col_name or "Total" in col_name or "Lucro" in col_name:
+                        worksheet.set_column(col_num, col_num, 14, real_fmt)
+                    elif "Alíquota" in col_name:
+                        worksheet.set_column(col_num, col_num, 12, pct_fmt)
+                    elif "CNPJ" in col_name:
+                        worksheet.set_column(col_num, col_num, 20, text_fmt)
+                    else:
+                        worksheet.set_column(col_num, col_num, 18)
 
-    st.download_button(
-        "📥 Baixar Relatório Consolidado (.xlsx)",
-        data=to_excel({
-            "Entradas": df_entrada,
-            "Saidas": df_saida,
-            "Estoque": df_estoque,
+        st.download_button("📥 Baixar Planilha Completa", data=output.getvalue(), file_name="relatorio_veiculos.xlsx")
             "Auditoria": df_alertas,
             "ResumoMensal": df_resumo
         }),
