@@ -16,6 +16,7 @@ def extrair_dados_xml(xml_path):
         ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
 
         dados = {}
+        print(f"\n📂 Processando: {xml_path}")
         for campo, paths in MAPA_CAMPOS.items():
             valor = None
             for path in paths:
@@ -24,16 +25,19 @@ def extrair_dados_xml(xml_path):
                     valor = elemento.text
                     break
             dados[campo] = valor
-            if not valor:
-                print(f"⚠️ Campo não encontrado: {campo} no XML {xml_path}")
+            if valor:
+                print(f"✅ {campo}: {valor}")
+            else:
+                print(f"⚠️ {campo} não encontrado")
 
         texto_xml = ET.tostring(root, encoding='unicode')
         for campo, padrao in REGEX_EXTRACAO.items():
             match = re.search(padrao, texto_xml)
             if match:
                 dados[campo] = match.group(1)
+                print(f"✅ Regex {campo}: {dados[campo]}")
             else:
-                print(f"⚠️ Regex não encontrou o campo: {campo} no XML {xml_path}")
+                print(f"⚠️ Regex não encontrou o campo: {campo}")
 
         return dados
     except Exception as e:
@@ -51,7 +55,7 @@ def processar_arquivos_xml(xml_paths):
     df = pd.DataFrame(registros)
 
     if df.empty:
-        print("⚠️ Nenhum dado extraído dos XMLs.")
+        print("\n⚠️ Nenhum dado extraído dos XMLs.")
 
     colunas_obrigatorias = ['Chassi', 'Placa', 'CFOP', 'Data Emissão', 'Destinatário Nome', 'Valor Total', 'Produto', 'Valor Entrada']
     for col in colunas_obrigatorias:
@@ -69,6 +73,14 @@ def processar_arquivos_xml(xml_paths):
         return "Entrada"
 
     df['Tipo Nota'] = df.apply(classificar_nota, axis=1)
+
+    entradas = df[df['Tipo Nota'] == "Entrada"].shape[0]
+    saidas = df[df['Tipo Nota'] == "Saída"].shape[0]
+
+    print(f"\n📊 Resumo Final:")
+    print(f"- Total de XMLs processados: {len(xml_paths)}")
+    print(f"- Notas de Entrada: {entradas}")
+    print(f"- Notas de Saída: {saidas}")
 
     df['Data Entrada'] = pd.to_datetime(df['Data Emissão'], errors='coerce')
     df['Data Saída'] = df.apply(lambda row: row['Data Emissão'] if row['Tipo Nota'] == "Saída" else pd.NaT, axis=1)
