@@ -11,7 +11,14 @@
     "qCom": "Quantidade",
     "vUnCom": "Valor Unitário",
     "vProd": "Valor Total",
-    "NCM": "NCM"
+    "NCM": "NCM",
+    "chassi": "Chassi",
+    "placa": "Placa",
+    "renavam": "Renavam",
+    "ano_modelo": "Ano Modelo",
+    "ano_fabricacao": "Ano Fabricação",
+    "cor": "Cor",
+    "km": "KM"
   },
   "emit": {
     "CNPJ": "Emitente CNPJ",
