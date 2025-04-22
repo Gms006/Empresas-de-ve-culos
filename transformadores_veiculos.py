@@ -43,7 +43,6 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     df_saida["Tipo Produto"] = df_saida.apply(classificar_produto_linha, axis=1)
 
     df_entrada = df_entrada[df_entrada["Tipo Produto"] == "Veículo"]
-    df_saida = df_saida[df_entrada.columns.intersection(df_saida.columns)].copy()
     df_saida = df_saida[df_saida["Tipo Produto"] == "Veículo"]
 
     estoque = []
@@ -51,17 +50,17 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     saidas = df_saida.to_dict("records")
 
     for ent in entradas:
-        chave = ent.get("Chassi") or ent.get("Placa") or None
-        if not chave:
+        chave_entrada = ent.get("Chassi") or ent.get("Placa") or None
+        if not chave_entrada:
             continue
 
-        saida_match = next((s for s in saidas if (s.get("Chassi") or s.get("Placa")) == chave), None)
+        saida_match = next(
+            (s for s in saidas if (s.get("Chassi") or s.get("Placa")) == chave_entrada),
+            None
+        )
 
-        try:
-            valor_entrada = pd.to_numeric(ent.get("Valor Total", 0), errors="coerce") or 0.0
-            valor_venda = pd.to_numeric(saida_match.get("Valor Total", 0), errors="coerce") if saida_match else 0.0
-        except:
-            valor_entrada, valor_venda = 0.0, 0.0
+        valor_entrada = pd.to_numeric(ent.get("Valor Total", 0), errors="coerce") or 0.0
+        valor_venda = pd.to_numeric(saida_match.get("Valor Total", 0), errors="coerce") if saida_match else 0.0
 
         item = {
             "Produto": ent.get("Produto"),
@@ -166,7 +165,7 @@ def gerar_resumo_mensal(df_estoque):
     if "Data Entrada" not in df.columns:
         return pd.DataFrame()
 
-    df["Mês"] = pd.to_datetime(df["Data Entrada"], dayfirst=True, errors='coerce').dt.to_period("M")
+    df["Mês"] = pd.to_datetime(df["Data Entrada"], errors='coerce').dt.to_period("M").astype(str)
     resumo = df.groupby("Mês").agg({
         "Valor Entrada": "sum",
         "Valor Venda": "sum",
