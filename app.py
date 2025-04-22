@@ -4,7 +4,7 @@ import zipfile
 import tempfile
 import os
 
-from extrator_veiculos import processar_xmls
+from estoque_veiculos import processar_xmls
 from configurador_planilha import configurar_planilha
 from transformadores_veiculos import gerar_estoque_fiscal, gerar_alertas_auditoria, gerar_kpis, gerar_resumo_mensal
 from apuracao_fiscal import calcular_apuracao
