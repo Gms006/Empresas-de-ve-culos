@@ -26,16 +26,22 @@ blacklist = classificacao.get("blacklist", [])
 
 
 def classificar_produto_linha(row):
-    import re
-    
     chassi = row.get("Chassi", "")
     placa = row.get("Placa", "")
     produto = str(row.get("Produto") or "").upper()
 
-    # Blacklist adicional para evitar falsos positivos
+    # Evita falso positivo com palavras proibidas
     blacklist = ["PLACA DE CARRO", "PLACA MOTO", "CARREGADOR", "ETIQUETA", "TAMPA", "SUPORTE", "ADESIVO", "FILTRO", "CAIXA"]
-    if any(p in produto for p in blacklist):
+    if any(palavra in produto for palavra in blacklist):
         return "Outro Produto"
+
+    if validar_chassi(chassi) or validar_placa(placa):
+        return "Veículo"
+
+    if any(palavra in produto for palavra in veiculo_keywords):
+        return "Veículo"
+
+    return "Outro Produto"
 
     # Fallback de chassi genérico (17 dígitos válidos)
     chassi_fallback = ""
