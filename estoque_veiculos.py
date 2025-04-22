@@ -1,10 +1,9 @@
 
 import pandas as pd
 from lxml import etree
-import re
 from collections import Counter
 
-# JSON embutido no script
+# ===== JSON EMBUTIDO =====
 MAPA_CAMPOS = {
     "essenciais": {
         "CFOP": ["//*[local-name()='CFOP']"],
@@ -35,31 +34,22 @@ def extrair_dados_xml(xml_path, log_erros):
 
         dados = {}
 
-        # 1️⃣ Extrair Campos Essenciais
-        for campo, paths in MAPA_CAMPOS['essenciais'].items():
-            valor = extrair_valor_xpath(tree, paths)
-            dados[campo] = valor
-
-        if not dados['CFOP'] or not dados['Data Emissão'] or not dados['Valor Total']:
-            log_erros['Notas inválidas - dados fiscais ausentes'] += 1
-            return None
-
-        # 2️⃣ Verificar se é Veículo
-        cfop = str(dados.get('CFOP', ''))
-        is_veiculo = cfop.startswith('5')
-
-        if is_veiculo:
-            for campo, paths in MAPA_CAMPOS['complementares'].items():
+        # 1️⃣ Extrair TODOS os dados do JSON
+        for grupo in MAPA_CAMPOS.values():
+            for campo, paths in grupo.items():
                 valor = extrair_valor_xpath(tree, paths)
+                dados[campo] = valor
                 if not valor:
                     log_erros[f'{campo} ausente'] += 1
-                dados[campo] = valor
-        else:
-            log_erros['Notas comuns (não veículo)'] += 1
+
+        # Validar mínimos para considerar nota válida
+        if not dados['CFOP'] or not dados['Data Emissão'] or not dados['Valor Total']:
+            log_erros['Notas inválidas - dados fiscais incompletos'] += 1
+            return None
 
         return dados
-    except Exception as e:
-        log_erros['Erros críticos de parsing'] += 1
+    except Exception:
+        log_erros['Erro crítico de parsing'] += 1
         return None
 
 def processar_arquivos_xml(xml_paths):
@@ -69,25 +59,37 @@ def processar_arquivos_xml(xml_paths):
 
     df = pd.DataFrame(registros_validos)
 
+    # Garantir todas as colunas
     todas_colunas = list(MAPA_CAMPOS['essenciais'].keys()) + list(MAPA_CAMPOS['complementares'].keys())
     for col in todas_colunas:
         if col not in df.columns:
             df[col] = None
 
+    # === Classificação Segura ===
     cfops_saida = ["5101", "5102", "5103", "5949", "6101", "6102", "6108", "6949"]
     cliente_final_ref = "cliente final"
 
     if not df.empty:
-        df['Tipo Nota'] = df.apply(lambda row: "Saída" if str(row['CFOP']).strip() in cfops_saida or cliente_final_ref in str(row['Destinatário Nome']).lower() else "Entrada", axis=1)
-        df['Data Entrada'] = pd.to_datetime(df['Data Emissão'], errors='coerce')
-        df['Data Saída'] = df.apply(lambda row: row['Data Emissão'] if row['Tipo Nota'] == "Saída" else pd.NaT, axis=1)
-        df['Data Saída'] = pd.to_datetime(df['Data Saída'], errors='coerce')
+        df['Tipo Nota'] = df.apply(
+            lambda row: "Saída" if str(row['CFOP']).strip() in cfops_saida or cliente_final_ref in str(row['Destinatário Nome']).lower() else "Entrada",
+            axis=1
+        )
+        print(f"✅ Classificação aplicada. Total: {len(df)} notas.")
     else:
         df['Tipo Nota'] = None
+        print("⚠️ DataFrame vazio. Nenhuma nota classificada.")
 
+    # Datas
+    df['Data Entrada'] = pd.to_datetime(df['Data Emissão'], errors='coerce')
+    df['Data Saída'] = df.apply(lambda row: row['Data Emissão'] if row['Tipo Nota'] == "Saída" else pd.NaT, axis=1)
+    df['Data Saída'] = pd.to_datetime(df['Data Saída'], errors='coerce')
+
+    # Logs Finais
     print(f"📊 RESUMO FINAL")
     print(f"- XMLs processados: {len(xml_paths)}")
     print(f"- Notas válidas: {len(registros_validos)}")
+    print(f"- Notas de Entrada: {df[df['Tipo Nota'] == 'Entrada'].shape[0]}")
+    print(f"- Notas de Saída: {df[df['Tipo Nota'] == 'Saída'].shape[0]}")
     for erro, qtd in log_erros.items():
         print(f"- {erro}: {qtd}")
 
