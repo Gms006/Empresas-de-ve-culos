@@ -4,6 +4,7 @@ import json
 import re
 import logging
 
+# Configuração de logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 log = logging.getLogger(__name__)
 
@@ -14,6 +15,7 @@ with open('extracao_config.json', encoding='utf-8') as f:
 with open('layout_colunas.json', encoding='utf-8') as f:
     LAYOUT_COLUNAS = json.load(f)
 
+# Funções de Validação
 def validar_chassi(chassi):
     return bool(chassi) and re.fullmatch(CONFIG_EXTRACAO["validadores"]["chassi"], chassi)
 
@@ -23,6 +25,7 @@ def validar_placa(placa):
         re.fullmatch(CONFIG_EXTRACAO["validadores"]["placa_antiga"], placa)
     )
 
+# Função para Classificar o Tipo da Nota
 def classificar_tipo_nota(row):
     cfop = str(row.get('CFOP') or "").strip()
     destinatario = str(row.get('Destinatário Nome') or "").lower()
@@ -32,6 +35,7 @@ def classificar_tipo_nota(row):
         return "Saída"
     return "Entrada"
 
+# Função Principal de Extração
 def extrair_dados_xml(xml_path):
     try:
         tree = ET.parse(xml_path)
@@ -39,17 +43,20 @@ def extrair_dados_xml(xml_path):
 
         dados = {col: None for col in LAYOUT_COLUNAS.keys()}
 
+        # Extração via XPath
         for campo, path in CONFIG_EXTRACAO["xpath_campos"].items():
             elemento = root.find(path)
             if campo in dados:
                 dados[campo] = elemento.text.strip() if elemento is not None and elemento.text else None
 
+        # Extração via Regex
         texto_xml = ET.tostring(root, encoding='unicode')
         for campo, padrao in CONFIG_EXTRACAO["regex_extracao"].items():
             match = re.search(padrao, texto_xml, re.IGNORECASE)
             if campo in dados:
                 dados[campo] = match.group(1).strip() if match else None
 
+        # Aplicar Validações
         if not validar_chassi(dados.get("Chassi")):
             dados["Chassi"] = None
         if not validar_placa(dados.get("Placa")):
@@ -61,8 +68,29 @@ def extrair_dados_xml(xml_path):
         log.error(f"Erro ao processar {xml_path}: {e}")
         return {col: None for col in LAYOUT_COLUNAS.keys()}
 
+# Processamento Completo dos XMLs
 def processar_xmls(xml_paths):
     registros = [extrair_dados_xml(p) for p in xml_paths if p.endswith(".xml")]
     df = pd.DataFrame(registros)
+
+    # Classificar Tipo de Nota
     df['Tipo Nota'] = df.apply(classificar_tipo_nota, axis=1)
+
+    # Padronizar Tipos
+    for coluna, config in LAYOUT_COLUNAS.items():
+        tipo = config.get("tipo")
+        if coluna in df.columns:
+            if tipo == "float":
+                df[coluna] = pd.to_numeric(df[coluna], errors='coerce')
+            elif tipo == "int":
+                df[coluna] = pd.to_numeric(df[coluna], errors='coerce').fillna(0).astype(int)
+            elif tipo == "date":
+                df[coluna] = pd.to_datetime(df[coluna], errors='coerce')
+            else:
+                df[coluna] = df[coluna].astype(str)
+
+    # Ordenar Colunas
+    colunas_ordenadas = sorted(LAYOUT_COLUNAS.items(), key=lambda x: x[1]['ordem'])
+    df = df[[col for col, _ in colunas_ordenadas if col in df.columns] + ['Tipo Nota']]
+
     return df
