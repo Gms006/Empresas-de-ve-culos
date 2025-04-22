@@ -2,6 +2,11 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 import json
 import re
+import logging
+
+# ===== Configuração de Logging =====
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+log = logging.getLogger(__name__)
 
 # ===== Carregar Configurações =====
 with open('mapa_campos_extracao.json', encoding='utf-8') as f:
@@ -37,7 +42,7 @@ def validar_placa(placa):
 # ===== Função de Extração com LOG =====
 def extrair_dados_xml(xml_path):
     try:
-        print(f"🔍 Processando XML: {xml_path}")
+        log.info(f"Processando XML: {xml_path}")
         tree = ET.parse(xml_path)
         root = tree.getroot()
         ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
@@ -52,7 +57,7 @@ def extrair_dados_xml(xml_path):
                     break
             dados[campo] = valor
             if not valor and campo in CAMPOS_OBRIGATORIOS:
-                print(f"⚠️ Campo obrigatório '{campo}' não encontrado no XML: {xml_path}")
+                log.warning(f"Campo obrigatório '{campo}' não encontrado no XML: {xml_path}")
 
         texto_xml = ET.tostring(root, encoding='unicode')
         for campo, padrao in REGEX_EXTRACAO.items():
@@ -62,29 +67,29 @@ def extrair_dados_xml(xml_path):
                     dados[campo] = match.group(1)
 
         if not validar_chassi(dados.get("Chassi")):
-            print(f"⚠️ Chassi inválido no XML: {xml_path}")
+            log.warning(f"Chassi inválido no XML: {xml_path}")
             dados["Chassi"] = None
         if not validar_placa(dados.get("Placa")):
-            print(f"⚠️ Placa inválida no XML: {xml_path}")
+            log.warning(f"Placa inválida no XML: {xml_path}")
             dados["Placa"] = None
 
         if any(not dados.get(campo) for campo in CAMPOS_OBRIGATORIOS):
-            print(f"⛔ XML ignorado por falta de campos essenciais: {xml_path}")
+            log.error(f"XML ignorado por falta de campos essenciais: {xml_path}")
             return None
 
         return dados
     except Exception as e:
-        print(f"❌ Erro ao processar {xml_path}: {e}")
+        log.error(f"Erro ao processar {xml_path}: {e}")
         return None
 
 # ===== Classificação com LOG =====
 def classificar_tipo_nota(row):
     tipo_nf = str(row.get('Tipo NF') or "").strip()
     if tipo_nf == "1":
-        print(f"🏷️ Classificado como Saída via Tipo NF")
+        log.info(f"Classificado como Saída via Tipo NF")
         return "Saída"
     if tipo_nf == "0":
-        print(f"🏷️ Classificado como Entrada via Tipo NF")
+        log.info(f"Classificado como Entrada via Tipo NF")
         return "Entrada"
 
     emitente_cnpj = (row.get('Emitente CNPJ') or "").zfill(14)
@@ -94,28 +99,28 @@ def classificar_tipo_nota(row):
     cfop = str(row.get('CFOP') or "").strip()
 
     if emitente_cnpj in CNPJS_EMPRESA:
-        print(f"🏷️ Classificado como Saída via Emitente CNPJ")
+        log.info(f"Classificado como Saída via Emitente CNPJ")
         return "Saída"
     if destinatario_cnpj in CNPJS_EMPRESA:
-        print(f"🏷️ Classificado como Entrada via Destinatário CNPJ")
+        log.info(f"Classificado como Entrada via Destinatário CNPJ")
         return "Entrada"
     if any(nome in emitente_nome for nome in NOMES_EMPRESA):
-        print(f"🏷️ Classificado como Saída via Nome Emitente")
+        log.info(f"Classificado como Saída via Nome Emitente")
         return "Saída"
     if any(nome in destinatario_nome for nome in NOMES_EMPRESA):
-        print(f"🏷️ Classificado como Entrada via Nome Destinatário")
+        log.info(f"Classificado como Entrada via Nome Destinatário")
         return "Entrada"
     if cfop in CFOPS_SAIDA:
-        print(f"🏷️ Classificado como Saída via CFOP")
+        log.info(f"Classificado como Saída via CFOP")
         return "Saída"
     if CLIENTE_FINAL_REF in destinatario_nome:
-        print(f"🏷️ Classificado como Saída via Cliente Final")
+        log.info(f"Classificado como Saída via Cliente Final")
         return "Saída"
 
-    print(f"⚠️ Classificação padrão aplicada: Entrada")
+    log.warning(f"Classificação padrão aplicada: Entrada")
     return "Entrada"
 
-# ===== Processamento Principal com LOG FINAL =====
+# ===== Processamento Principal =====
 def processar_arquivos_xml(xml_paths):
     registros = [extrair_dados_xml(path) for path in xml_paths if path.endswith(".xml")]
     df = pd.DataFrame(filter(None, registros))
@@ -131,17 +136,17 @@ def processar_arquivos_xml(xml_paths):
             errors='coerce'
         )
     else:
-        print("⚠️ Nenhum registro válido encontrado.")
+        log.warning("Nenhum registro válido encontrado.")
         df = pd.DataFrame(columns=colunas_finais)
 
     for col in colunas_finais:
         if col not in df.columns:
             df[col] = None
 
-    print(f"\n📊 === RESUMO FINAL ===")
-    print(f"XMLs processados: {len(xml_paths)}")
-    print(f"Notas válidas: {len(df)}")
-    print(f"Entradas detectadas: {df[df['Tipo Nota'] == 'Entrada'].shape[0]}")
-    print(f"Saídas detectadas: {df[df['Tipo Nota'] == 'Saída'].shape[0]}")
+    log.info(f"\n=== RESUMO FINAL ===")
+    log.info(f"XMLs processados: {len(xml_paths)}")
+    log.info(f"Notas válidas: {len(df)}")
+    log.info(f"Entradas detectadas: {df[df['Tipo Nota'] == 'Entrada'].shape[0]}")
+    log.info(f"Saídas detectadas: {df[df['Tipo Nota'] == 'Saída'].shape[0]}")
 
     return df[df['Tipo Nota'] == "Entrada"].copy(), df[df['Tipo Nota'] == "Saída"].copy()
