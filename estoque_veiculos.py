@@ -3,16 +3,17 @@ import os
 import re
 import json
 import xml.etree.ElementTree as ET
-from datetime import datetime
 import pandas as pd
 
-# Carregamento de configurações via JSON externo
+# Carregamento dos JSONs
 with open("mapa_campos_extracao.json", "r", encoding="utf-8") as f:
     mapa = json.load(f)
 with open("formato_colunas.json", "r", encoding="utf-8") as f:
     formato = json.load(f)
 with open("ordem_colunas.json", "r", encoding="utf-8") as f:
     ordem = json.load(f)["ordem_preferida"]
+with open("regex_extracao.json", "r", encoding="utf-8") as f:
+    regex = json.load(f)
 
 def obter_valor(ns, tag, contexto):
     try:
@@ -25,7 +26,6 @@ def aplicar_tipo(valor, campo, formato):
     try:
         if not valor:
             return 0.0 if campo in formato.get("moeda", []) or campo in formato.get("percentual", []) else 0
-
         if campo in formato.get("moeda", []) or campo in formato.get("percentual", []):
             return float(str(valor).replace(",", "."))
         elif campo in formato.get("inteiro", []):
@@ -34,6 +34,14 @@ def aplicar_tipo(valor, campo, formato):
             return valor
     except:
         return valor
+
+def aplicar_regex_extracao(texto):
+    resultado = {}
+    for campo, padrao in regex.items():
+        match = re.search(padrao, texto, flags=re.IGNORECASE)
+        if match:
+            resultado[campo] = match.group(1).strip()
+    return resultado
 
 def reordenar_colunas(df, ordem):
     if df.empty:
@@ -68,6 +76,7 @@ def processar_arquivos_xml(lista_de_caminhos):
                 prod = det.find("ns:prod", ns)
                 imposto = det.find("ns:imposto", ns)
 
+                # Extração padrão pelo mapa
                 for secao, campos in mapa.items():
                     if secao == "ide":
                         contexto = ide
@@ -85,10 +94,24 @@ def processar_arquivos_xml(lista_de_caminhos):
                             valor = obter_valor(ns, xml_tag, contexto)
                             linha[nome_coluna] = aplicar_tipo(valor, nome_coluna, formato)
 
-                # Determinar tipo (Entrada/Saída)
-                cnpj_emitente = obter_valor(ns, "CNPJ", emit)
-                nome_destinatario = obter_valor(ns, "xNome", dest).upper()
+                # Extração adicional de campos veiculares via regex
+                xProd_texto = obter_valor(ns, "xProd", prod)
+                campos_extras = aplicar_regex_extracao(xProd_texto)
+                for campo, valor in campos_extras.items():
+                    nome_coluna = {
+                        "chassi": "Chassi",
+                        "placa": "Placa",
+                        "renavam": "Renavam",
+                        "ano_modelo": "Ano Modelo",
+                        "ano_fabricacao": "Ano Fabricação",
+                        "cor": "Cor",
+                        "km": "KM"
+                    }.get(campo, campo)
+                    linha[nome_coluna] = aplicar_tipo(valor, nome_coluna, formato)
+
+                # Determinação de entrada/saída
                 cfop = obter_valor(ns, "CFOP", prod)
+                nome_destinatario = obter_valor(ns, "xNome", dest).upper()
                 tipo = "Entrada" if cfop.startswith("1") or cfop.startswith("2") else (
                     "Entrada" if "BDA COMERCIO" in nome_destinatario else "Saída"
                 )
