@@ -103,6 +103,13 @@ def processar_arquivos_xml(lista_de_caminhos):
                 texto_completo = f"{xProd_texto} {adProd_texto}".strip()
 
                 campos_extras = aplicar_regex_extracao(texto_completo)
+
+                # Fallback de chassi oculto (ex: dentro de Produto)
+                if "chassi" not in campos_extras or not campos_extras.get("chassi"):
+                    match_chassi_livre = re.search(r"(?<![A-Z0-9])[A-HJ-NPR-Z0-9]{17}(?![A-Z0-9])", texto_completo)
+                    if match_chassi_livre:
+                        campos_extras["chassi"] = match_chassi_livre.group(0)
+
                 
     # Fallback de chassi oculto (ex: dentro de Produto)
     if "chassi" not in campos_extras or not campos_extras.get("chassi"):
