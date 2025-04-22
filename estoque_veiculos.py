@@ -16,35 +16,39 @@ def extrair_dados_xml(xml_path):
         ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
 
         dados = {}
-        print(f"\n📂 Processando: {xml_path}")
-        for campo, paths in MAPA_CAMPOS.items():
-            valor = None
-            for path in paths:
-                elemento = root.find(path, ns) or root.find(path)
-                if elemento is not None and elemento.text:
-                    valor = elemento.text
-                    break
-            dados[campo] = valor
-            if valor:
-                print(f"✅ {campo}: {valor}")
-            else:
-                print(f"⚠️ {campo} não encontrado")
+        with open("log_extracao.txt", "a", encoding="utf-8") as log:
+            log.write(f"\n📂 Processando: {xml_path}\n")
+            for campo, paths in MAPA_CAMPOS.items():
+                valor = None
+                for path in paths:
+                    elemento = root.find(path, ns) or root.find(path)
+                    if elemento is not None and elemento.text:
+                        valor = elemento.text
+                        break
+                dados[campo] = valor
+                if valor:
+                    log.write(f"✅ {campo}: {valor}\n")
+                else:
+                    log.write(f"⚠️ {campo} não encontrado\n")
 
-        texto_xml = ET.tostring(root, encoding='unicode')
-        for campo, padrao in REGEX_EXTRACAO.items():
-            match = re.search(padrao, texto_xml)
-            if match:
-                dados[campo] = match.group(1)
-                print(f"✅ Regex {campo}: {dados[campo]}")
-            else:
-                print(f"⚠️ Regex não encontrou o campo: {campo}")
-
+            texto_xml = ET.tostring(root, encoding='unicode')
+            for campo, padrao in REGEX_EXTRACAO.items():
+                match = re.search(padrao, texto_xml)
+                if match:
+                    dados[campo] = match.group(1)
+                    log.write(f"✅ Regex {campo}: {dados[campo]}\n")
+                else:
+                    log.write(f"⚠️ Regex não encontrou o campo: {campo}\n")
         return dados
     except Exception as e:
-        print(f"❌ Erro ao processar {xml_path}: {e}")
+        with open("log_extracao.txt", "a", encoding="utf-8") as log:
+            log.write(f"❌ Erro ao processar {xml_path}: {e}\n")
         return None
 
 def processar_arquivos_xml(xml_paths):
+    # Limpar log anterior
+    open("log_extracao.txt", "w").close()
+
     registros = []
     for path in xml_paths:
         if path.endswith(".xml"):
@@ -53,9 +57,6 @@ def processar_arquivos_xml(xml_paths):
                 registros.append(registro)
 
     df = pd.DataFrame(registros)
-
-    if df.empty:
-        print("\n⚠️ Nenhum dado extraído dos XMLs.")
 
     colunas_obrigatorias = ['Chassi', 'Placa', 'CFOP', 'Data Emissão', 'Destinatário Nome', 'Valor Total', 'Produto', 'Valor Entrada']
     for col in colunas_obrigatorias:
@@ -77,10 +78,11 @@ def processar_arquivos_xml(xml_paths):
     entradas = df[df['Tipo Nota'] == "Entrada"].shape[0]
     saidas = df[df['Tipo Nota'] == "Saída"].shape[0]
 
-    print(f"\n📊 Resumo Final:")
-    print(f"- Total de XMLs processados: {len(xml_paths)}")
-    print(f"- Notas de Entrada: {entradas}")
-    print(f"- Notas de Saída: {saidas}")
+    with open("log_extracao.txt", "a", encoding="utf-8") as log:
+        log.write(f"\n📊 Resumo Final:\n")
+        log.write(f"- Total de XMLs processados: {len(xml_paths)}\n")
+        log.write(f"- Notas de Entrada: {entradas}\n")
+        log.write(f"- Notas de Saída: {saidas}\n")
 
     df['Data Entrada'] = pd.to_datetime(df['Data Emissão'], errors='coerce')
     df['Data Saída'] = df.apply(lambda row: row['Data Emissão'] if row['Tipo Nota'] == "Saída" else pd.NaT, axis=1)
