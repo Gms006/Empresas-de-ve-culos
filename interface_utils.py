@@ -28,8 +28,8 @@ def criar_aba_padrao(titulo, df, coluna_data=None):
     # Aplicar filtro por período
     if coluna_data:
         anos, meses = obter_anos_meses_unicos(df, coluna_data)
-        ano = st.sidebar.selectbox(f"Ano ({titulo})", [None] + anos)
-        mes = st.sidebar.selectbox(f"Mês ({titulo})", [None] + meses)
+        ano = st.sidebar.selectbox(f"Ano ({titulo})", [None] + anos, key=f"ano_{titulo}")
+        mes = st.sidebar.selectbox(f"Mês ({titulo})", [None] + meses, key=f"mes_{titulo}")
         df = aplicar_filtro_periodo(df, coluna_data, ano, mes)
 
     df_formatado = formatar_df_exibicao(df)
@@ -46,7 +46,7 @@ def criar_aba_padrao(titulo, df, coluna_data=None):
                 df_temp[col] = pd.to_numeric(df_temp[col], errors='coerce')
             elif col in formato.get("inteiro", []):
                 df_temp[col] = pd.to_numeric(df_temp[col], errors='coerce').fillna(0).astype(int)
-            elif "Data" in col:
+            elif any(p in col for p in ["Data", "Mês", "Trimestre"]):
                 df_temp[col] = pd.to_datetime(df_temp[col], errors='coerce').dt.strftime("%d/%m/%Y")
 
         df_temp.to_excel(writer, sheet_name=titulo[:31], index=False)
