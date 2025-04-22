@@ -27,6 +27,8 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     }, inplace=True)
 
     return df_estoque
+
+def gerar_alertas_auditoria(df_entrada, df_saida):
     erros = []
     df_entrada = df_entrada.copy()
     df_saida = df_saida.copy()
@@ -46,6 +48,19 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
             'Erro': 'DUPLICIDADE_ENTRADA',
             'Categoria': 'Crítico'
         })
+
+    for _, row in duplicadas_saida.iterrows():
+        erros.append({
+            'Tipo': 'Saída',
+            'Nota Fiscal': row.get('Nota Fiscal'),
+            'Data': row.get('Data Emissão'),
+            'Chave': row['Chave'],
+            'Erro': 'DUPLICIDADE_SAIDA',
+            'Categoria': 'Crítico'
+        })
+
+    return pd.DataFrame(erros)
+
 
     for _, row in duplicadas_saida.iterrows():
         erros.append({
