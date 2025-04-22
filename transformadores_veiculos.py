@@ -27,7 +27,7 @@ blacklist = classificacao.get("blacklist", [])
 def classificar_produto_linha(row):
     chassi = row.get("Chassi", "")
     placa = row.get("Placa", "")
-    produto = str(row.get("Produto", "")).upper()
+    produto = str(row.get("Produto") or "").upper()
 
     if any(palavra in produto for palavra in blacklist):
         return "Outro Produto"
@@ -43,6 +43,7 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     df_saida["Tipo Produto"] = df_saida.apply(classificar_produto_linha, axis=1)
 
     df_entrada = df_entrada[df_entrada["Tipo Produto"] == "Veículo"]
+    df_saida = df_saida[df_entrada.columns.intersection(df_saida.columns)].copy()
     df_saida = df_saida[df_saida["Tipo Produto"] == "Veículo"]
 
     estoque = []
@@ -50,18 +51,27 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     saidas = df_saida.to_dict("records")
 
     for ent in entradas:
-        chave = ent.get("Chassi") or ent.get("Placa")
+        chave = ent.get("Chassi") or ent.get("Placa") or None
+        if not chave:
+            continue
+
         saida_match = next((s for s in saidas if (s.get("Chassi") or s.get("Placa")) == chave), None)
+
+        try:
+            valor_entrada = pd.to_numeric(ent.get("Valor Total", 0), errors="coerce") or 0.0
+            valor_venda = pd.to_numeric(saida_match.get("Valor Total", 0), errors="coerce") if saida_match else 0.0
+        except:
+            valor_entrada, valor_venda = 0.0, 0.0
 
         item = {
             "Produto": ent.get("Produto"),
             "Chassi": ent.get("Chassi"),
             "Placa": ent.get("Placa"),
             "Data Entrada": ent.get("Data Emissão"),
-            "Valor Entrada": float(ent.get("Valor Total", 0)),
+            "Valor Entrada": valor_entrada,
             "Data Saída": saida_match.get("Data Emissão") if saida_match else "",
-            "Valor Venda": float(saida_match.get("Valor Total", 0)) if saida_match else 0.0,
-            "Lucro": float(saida_match.get("Valor Total", 0)) - float(ent.get("Valor Total", 0)) if saida_match else 0.0,
+            "Valor Venda": valor_venda,
+            "Lucro": valor_venda - valor_entrada if saida_match else 0.0,
             "Situação": "Vendido" if saida_match else "Em Estoque"
         }
         estoque.append(item)
@@ -90,7 +100,11 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
 
     for tipo, df in [("Entrada", df_entrada), ("Saída", df_saida)]:
         chave = obter_chave(df)
-        duplicados = df[chave.notna()].groupby(chave).filter(lambda x: len(x) > 1)
+        chave_validas = chave.notna()
+        try:
+            duplicados = df.loc[chave_validas].groupby(chave[chave_validas]).filter(lambda x: len(x) > 1)
+        except Exception:
+            continue
 
         for _, grupo in duplicados.groupby(obter_chave(duplicados)):
             chave_valor = grupo["Chassi"].iloc[0] if "Chassi" in grupo.columns and pd.notna(grupo["Chassi"].iloc[0]) else grupo["Placa"].iloc[0]
@@ -102,7 +116,7 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
                 "Notas": ", ".join(grupo["Nota Fiscal"].astype(str))
             })
 
-    chaves_entrada = set(obter_chave(df_entrada))
+    chaves_entrada = set(obter_chave(df_entrada).dropna().unique())
     for _, s in df_saida.iterrows():
         chave = s.get("Chassi") or s.get("Placa")
         if chave and chave not in chaves_entrada:
@@ -114,7 +128,7 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
                 "Notas": s.get("Nota Fiscal")
             })
 
-    chaves_saida = set(obter_chave(df_saida))
+    chaves_saida = set(obter_chave(df_saida).dropna().unique())
     for _, e in df_entrada.iterrows():
         chave = e.get("Chassi") or e.get("Placa")
         if chave and chave not in chaves_saida:
@@ -130,8 +144,12 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
 
 # === KPIs ===
 def gerar_kpis(df_estoque):
-    vendidos = df_estoque[df_estoque["Situação"] == "Vendido"]
-    em_estoque = df_estoque[df_estoque["Situação"] == "Em Estoque"]
+    vendidos = df_estoque[df_estoque["Situação"] == "Vendido"].copy()
+    em_estoque = df_estoque[df_estoque["Situação"] == "Em Estoque"].copy()
+
+    vendidos["Lucro"] = pd.to_numeric(vendidos["Lucro"], errors="coerce").fillna(0.0)
+    vendidos["Valor Venda"] = pd.to_numeric(vendidos["Valor Venda"], errors="coerce").fillna(0.0)
+    em_estoque["Valor Entrada"] = pd.to_numeric(em_estoque["Valor Entrada"], errors="coerce").fillna(0.0)
 
     return {
         "Total Vendido (R$)": vendidos["Valor Venda"].sum(),
@@ -145,6 +163,9 @@ def gerar_kpis(df_estoque):
 # === Resumo Mensal ===
 def gerar_resumo_mensal(df_estoque):
     df = df_estoque.copy()
+    if "Data Entrada" not in df.columns:
+        return pd.DataFrame()
+
     df["Mês"] = pd.to_datetime(df["Data Entrada"], dayfirst=True, errors='coerce').dt.to_period("M")
     resumo = df.groupby("Mês").agg({
         "Valor Entrada": "sum",
