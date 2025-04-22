@@ -100,10 +100,16 @@ def processar_arquivos_xml(lista_de_caminhos):
                 xProd_texto = obter_valor(ns, "xProd", prod)
                 adProd_texto = infAdProd.text if infAdProd is not None else ""
                 texto_completo = f"{xProd_texto} {adProd_texto}".strip()
+                
                 campos_extras = aplicar_regex_extracao(texto_completo)
 
-                # Aplicar campos extras
+                if "chassi" not in campos_extras or not campos_extras.get("chassi"):
+                    match_chassi_livre = re.search(r"(?<![A-Z0-9])[A-HJ-NPR-Z0-9]{17}(?![A-Z0-9])", texto_completo)
+                    if match_chassi_livre:
+                        campos_extras["chassi"] = match_chassi_livre.group(1)
+
                 for campo, valor in campos_extras.items():
+
                     nome_coluna = {
                         "chassi": "Chassi",
                         "placa": "Placa",
