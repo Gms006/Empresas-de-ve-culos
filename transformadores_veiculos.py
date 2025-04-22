@@ -11,18 +11,27 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     df_saida = df_saida.drop_duplicates(subset='Chave')
     df_estoque = pd.merge(df_entrada, df_saida, on='Chave', how='left', suffixes=('_entrada', '_saida'))
 
-    # Renomear colunas pós-merge
-    df_estoque.rename(columns={
-        "Data Saída_saida": "Data Saída",
-        "Valor Venda_saida": "Valor Venda",
-        "Nota Fiscal_saida": "Nota Fiscal Saída"
-    }, inplace=True)
+    # Garantir colunas após o merge
+    if "Data Saída_saida" in df_estoque.columns:
+        df_estoque.rename(columns={"Data Saída_saida": "Data Saída"}, inplace=True)
+    else:
+        df_estoque["Data Saída"] = pd.NaT
 
-    # Situação
+    if "Valor Venda_saida" in df_estoque.columns:
+        df_estoque.rename(columns={"Valor Venda_saida": "Valor Venda"}, inplace=True)
+    else:
+        df_estoque["Valor Venda"] = 0.0
+
+    if "Nota Fiscal_saida" in df_estoque.columns:
+        df_estoque.rename(columns={"Nota Fiscal_saida": "Nota Fiscal Saída"}, inplace=True)
+    else:
+        df_estoque["Nota Fiscal Saída"] = None
+
+    # Definir Situação com segurança
     df_estoque['Situação'] = df_estoque['Data Saída'].notna().map({True: 'Vendido', False: 'Em Estoque'})
 
-    # Lucro com proteção
-    if 'Valor Venda' in df_estoque.columns and 'Valor Entrada' in df_estoque.columns:
+    # Calcular Lucro
+    if 'Valor Entrada' in df_estoque.columns:
         df_estoque['Lucro'] = df_estoque['Valor Venda'].astype(float).fillna(0) - df_estoque['Valor Entrada'].astype(float).fillna(0)
     else:
         df_estoque['Lucro'] = 0.0
@@ -63,16 +72,8 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
     return pd.DataFrame(erros)
 
 def gerar_kpis(df_estoque):
-    if 'Valor Entrada' in df_estoque.columns:
-        estoque_atual = df_estoque[df_estoque['Situação'] == 'Em Estoque']['Valor Entrada'].astype(float).sum()
-    else:
-        estoque_atual = 0.0
-
-    if 'Valor Venda' in df_estoque.columns:
-        total_vendido = df_estoque[df_estoque['Situação'] == 'Vendido']['Valor Venda'].astype(float).sum()
-    else:
-        total_vendido = 0.0
-
+    estoque_atual = df_estoque[df_estoque['Situação'] == 'Em Estoque']['Valor Entrada'].astype(float).sum() if 'Valor Entrada' in df_estoque.columns else 0.0
+    total_vendido = df_estoque[df_estoque['Situação'] == 'Vendido']['Valor Venda'].astype(float).sum() if 'Valor Venda' in df_estoque.columns else 0.0
     lucro_total = df_estoque['Lucro'].astype(float).sum() if 'Lucro' in df_estoque.columns else 0.0
 
     return {
