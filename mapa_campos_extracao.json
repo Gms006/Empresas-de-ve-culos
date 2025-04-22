@@ -1,27 +1,23 @@
 {
-    "essenciais": {
-        "CFOP": [
-            "//*[local-name()='CFOP']"
-        ],
-        "Data Emissão": [
-            "//*[local-name()='dhEmi']"
-        ],
-        "Destinatário Nome": [
-            "//*[local-name()='dest']/*[local-name()='xNome']"
-        ],
-        "Valor Total": [
-            "//*[local-name()='vNF']"
-        ]
-    },
-    "complementares": {
-        "Chassi": [
-            "//*[local-name()='chassi']"
-        ],
-        "Placa": [
-            "//*[local-name()='placa']"
-        ],
-        "Renavam": [
-            "//*[local-name()='RENAVAM']"
-        ]
-    }
+    "CFOP": [
+        "./infNFe/det/prod/CFOP"
+    ],
+    "Data Emissão": [
+        "./infNFe/ide/dhEmi"
+    ],
+    "Destinatário Nome": [
+        "./infNFe/dest/xNome"
+    ],
+    "Valor Total": [
+        "./infNFe/total/ICMSTot/vNF"
+    ],
+    "Chassi": [
+        "./infNFe/det/prod/veicProd/chassi"
+    ],
+    "Placa": [
+        "./infNFe/det/prod/veicProd/placa"
+    ],
+    "Renavam": [
+        "./infNFe/det/prod/veicProd/RENAVAM"
+    ]
 }
