@@ -21,6 +21,9 @@ with open('empresas_config.json', encoding='utf-8') as f:
 with open('validador_veiculo.json', encoding='utf-8') as f:
     VALIDADORES = json.load(f)
 
+with open('ordem_colunas.json', encoding='utf-8') as f:
+    ORDEM_COLUNAS = json.load(f)['ordem_preferida']
+
 CNPJS_EMPRESA = CONFIG_EMPRESA['cnpj_emitentes']
 NOMES_EMPRESA = [nome.lower() for nome in CONFIG_EMPRESA['nomes_proprios']]
 
@@ -39,7 +42,7 @@ def validar_placa(placa):
         re.fullmatch(VALIDADORES["placa_antiga"], placa)
     )
 
-# ===== Extração Segura com XPath =====
+# ===== Função de Extração com lxml =====
 def extrair_dados_xml(xml_path):
     try:
         log.info(f"Processando XML: {xml_path}")
@@ -61,7 +64,7 @@ def extrair_dados_xml(xml_path):
                         break
             dados[campo] = valor
             if not valor and campo in CAMPOS_OBRIGATORIOS:
-                log.warning(f"Campo obrigatório '{campo}' não encontrado no XML.")
+                log.warning(f"Campo obrigatório '{campo}' não encontrado.")
 
         texto_xml = etree.tostring(root, encoding='unicode')
         for campo, padrao in REGEX_EXTRACAO.items():
@@ -90,10 +93,8 @@ def extrair_dados_xml(xml_path):
 def classificar_tipo_nota(row):
     tipo_nf = str(row.get('Tipo NF') or "").strip()
     if tipo_nf == "1":
-        log.info(f"Classificado como Saída via Tipo NF")
         return "Saída"
     if tipo_nf == "0":
-        log.info(f"Classificado como Entrada via Tipo NF")
         return "Entrada"
 
     emitente_cnpj = (row.get('Emitente CNPJ') or "").zfill(14)
@@ -115,7 +116,6 @@ def classificar_tipo_nota(row):
     if CLIENTE_FINAL_REF in destinatario_nome:
         return "Saída"
 
-    log.warning(f"Classificação padrão aplicada: Entrada")
     return "Entrada"
 
 # ===== Processamento Principal =====
@@ -123,7 +123,7 @@ def processar_arquivos_xml(xml_paths):
     registros = [extrair_dados_xml(path) for path in xml_paths if path.endswith(".xml")]
     df = pd.DataFrame(filter(None, registros))
 
-    colunas_finais = list(set(MAPA_CAMPOS.keys()).union(REGEX_EXTRACAO.keys()))
+    colunas_finais = list(set(ORDEM_COLUNAS + list(REGEX_EXTRACAO.keys())))
     colunas_finais += ['Tipo Nota', 'Data Entrada', 'Data Saída']
 
     if not df.empty:
