@@ -1,3 +1,10 @@
+import pandas as pd
+import json
+
+# Carregar Layout de Colunas no escopo global
+with open('layout_colunas.json', encoding='utf-8') as f:
+    LAYOUT_COLUNAS = json.load(f)
+
 def configurar_planilha(df):
     df = df.copy()
 
@@ -24,7 +31,7 @@ def configurar_planilha(df):
 
     df = df[colunas_ordenadas]
 
-    # 🚨 Remover colunas duplicadas
+    # Remover colunas duplicadas
     df = df.loc[:, ~df.columns.duplicated()]
 
     return df
