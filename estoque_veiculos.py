@@ -1,6 +1,6 @@
 
 import pandas as pd
-import xml.etree.ElementTree as ET
+from lxml import etree
 import json
 import re
 from collections import Counter
@@ -12,9 +12,8 @@ with open('regex_extracao.json', encoding='utf-8') as f:
 
 def extrair_dados_xml(xml_path, contador_falhas, erros_criticos):
     try:
-        tree = ET.parse(xml_path)
-        root = tree.getroot()
-        ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
+        with open(xml_path, 'rb') as f:
+            tree = etree.parse(f)
 
         dados = {}
         for campo, paths in MAPA_CAMPOS.items():
@@ -22,15 +21,15 @@ def extrair_dados_xml(xml_path, contador_falhas, erros_criticos):
                 paths = [paths]
             valor = None
             for path in paths:
-                elemento = root.find(path, ns) or root.find(path)
-                if elemento is not None and elemento.text:
-                    valor = elemento.text
+                resultado = tree.xpath(f'//*[local-name() = "{path.split("/")[-1]}"]')
+                if resultado and resultado[0].text:
+                    valor = resultado[0].text
                     break
             dados[campo] = valor
             if not valor:
                 contador_falhas[campo] += 1
 
-        texto_xml = ET.tostring(root, encoding='unicode')
+        texto_xml = etree.tostring(tree, encoding='unicode')
         for campo, padrao in REGEX_EXTRACAO.items():
             match = re.search(padrao, texto_xml)
             if match:
@@ -78,7 +77,6 @@ def processar_arquivos_xml(xml_paths):
     entradas = df[df['Tipo Nota'] == "Entrada"].shape[0]
     saidas = df[df['Tipo Nota'] == "Saída"].shape[0]
 
-    # Gerar LOG RESUMIDO
     with open("log_extracao.txt", "a", encoding="utf-8") as log:
         log.write(f"📊 RESUMO DA EXTRAÇÃO\n")
         log.write(f"- XMLs processados: {len(xml_paths)}\n")
