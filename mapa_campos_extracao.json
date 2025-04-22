@@ -1,46 +1,74 @@
 {
-  "ide": {
-    "nNF": "Nota Fiscal",
-    "serie": "Série",
-    "dhEmi": "Data Emissão"
-  },
-  "prod": {
-    "xProd": "Produto",
-    "cProd": "Código Produto",
-    "CFOP": "CFOP",
-    "qCom": "Quantidade",
-    "vUnCom": "Valor Unitário",
-    "vProd": "Valor Total",
-    "NCM": "NCM",
-    "chassi": "Chassi",
-    "placa": "Placa",
-    "renavam": "Renavam",
-    "ano_modelo": "Ano Modelo",
-    "ano_fabricacao": "Ano Fabricação",
-    "cor": "Cor",
-    "km": "KM"
-  },
-  "emit": {
-    "CNPJ": "Emitente CNPJ",
-    "xNome": "Emitente Nome"
-  },
-  "dest": {
-    "CNPJ": "Destinatário CNPJ",
-    "xNome": "Destinatário Nome"
-  },
-  "ICMS": {
-    "vICMS": "ICMS Valor (R$)",
-    "pICMS": "ICMS Alíquota (%)",
-    "CST": "ICMS CST",
-    "CSOSN": "ICMS CSOSN",
-    "vBC": "ICMS Base Cálculo"
-  },
-  "PIS": {
-    "vPIS": "PIS Valor (R$)",
-    "pPIS": "PIS Alíquota (%)"
-  },
-  "COFINS": {
-    "vCOFINS": "COFINS Valor (R$)",
-    "pCOFINS": "COFINS Alíquota (%)"
-  }
+    "Chassi": [
+        ".//nfe:chassi",
+        ".//chassi",
+        ".//infAdProd"
+    ],
+    "Placa": [
+        ".//nfe:placa",
+        ".//placa",
+        ".//infAdProd"
+    ],
+    "CFOP": [
+        ".//nfe:CFOP",
+        ".//CFOP"
+    ],
+    "Data Emissão": [
+        ".//nfe:dhEmi",
+        ".//nfe:ide/nfe:dhEmi",
+        ".//nfe:dEmi",
+        ".//ide/dEmi"
+    ],
+    "Destinatário Nome": [
+        ".//nfe:dest/nfe:xNome",
+        ".//dest/xNome"
+    ],
+    "Destinatário CNPJ": [
+        ".//nfe:dest/nfe:CNPJ",
+        ".//dest/CNPJ"
+    ],
+    "Emitente Nome": [
+        ".//nfe:emit/nfe:xNome",
+        ".//emit/xNome"
+    ],
+    "Emitente CNPJ": [
+        ".//nfe:emit/nfe:CNPJ",
+        ".//emit/CNPJ"
+    ],
+    "Produto": [
+        ".//nfe:prod/nfe:xProd",
+        ".//prod/xProd"
+    ],
+    "Valor Total": [
+        ".//nfe:ICMSTot/nfe:vNF",
+        ".//ICMSTot/vNF"
+    ],
+    "Valor Produto": [
+        ".//nfe:prod/nfe:vProd",
+        ".//prod/vProd"
+    ],
+    "Valor Desconto": [
+        ".//nfe:ICMSTot/nfe:vDesc",
+        ".//ICMSTot/vDesc"
+    ],
+    "Valor Frete": [
+        ".//nfe:ICMSTot/nfe:vFrete",
+        ".//ICMSTot/vFrete"
+    ],
+    "ICMS": [
+        ".//nfe:ICMS/nfe:vICMS",
+        ".//ICMS/vICMS"
+    ],
+    "PIS": [
+        ".//nfe:PIS/nfe:vPIS",
+        ".//PIS/vPIS"
+    ],
+    "COFINS": [
+        ".//nfe:COFINS/nfe:vCOFINS",
+        ".//COFINS/vCOFINS"
+    ],
+    "NCM": [
+        ".//nfe:prod/nfe:NCM",
+        ".//prod/NCM"
+    ]
 }
