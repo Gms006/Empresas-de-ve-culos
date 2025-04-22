@@ -2,8 +2,8 @@ import os
 import re
 import json
 import xml.etree.ElementTree as ET
-from datetime import datetime
 import pandas as pd
+from datetime import datetime
 
 def obter_valor(ns, tag, contexto):
     try:
@@ -18,21 +18,29 @@ def aplicar_tipo(valor, campo, formato):
         elif campo in formato.get("inteiro", []):
             return int(float(valor))
         else:
-            return valor
+            return str(valor).strip()
     except:
         return valor
 
 def processar_arquivos_xml(lista_de_caminhos):
+    with open("mapa_campos_extracao.json", "r", encoding="utf-8") as f:
+        mapa = json.load(f)
+    with open("formato_colunas.json", "r", encoding="utf-8") as f:
+        formato = json.load(f)
+
     entradas, saidas = [], []
     for caminho in lista_de_caminhos:
         try:
             tree = ET.parse(caminho)
             root = tree.getroot()
-            ns = {'ns': 'http://www.portalfiscal.inf.br/nfe'}
+            ns = {"ns": "http://www.portalfiscal.inf.br/nfe"}
             infNFe = root.find(".//ns:infNFe", ns)
-            emit = infNFe.find(".//ns:emit", ns)
-            dest = infNFe.find(".//ns:dest", ns)
-            ide = infNFe.find(".//ns:ide", ns)
+            if infNFe is None:
+                continue
+
+            ide = infNFe.find("ns:ide", ns)
+            emit = infNFe.find("ns:emit", ns)
+            dest = infNFe.find("ns:dest", ns)
             produtos = infNFe.findall(".//ns:det", ns)
 
             for det in produtos:
@@ -50,24 +58,24 @@ def processar_arquivos_xml(lista_de_caminhos):
                     elif secao == "prod":
                         contexto = prod
                     else:
-                        contexto = imposto.find(f"ns:{secao}", ns)
+                        contexto = imposto.find(f"ns:{secao}", ns) if imposto is not None else None
 
                     if contexto is not None:
-                        for xml_tag, nome_coluna in campos.items():
-                            valor = obter_valor(ns, xml_tag, contexto)
+                        for tag_xml, nome_coluna in campos.items():
+                            valor = obter_valor(ns, tag_xml, contexto)
                             linha[nome_coluna] = aplicar_tipo(valor, nome_coluna, formato)
 
-                # Metadados para classificação
-                cnpj_emitente = obter_valor(ns, "CNPJ", emit)
-                nome_destinatario = obter_valor(ns, "xNome", dest).upper()
-                cfop = obter_valor(ns, "CFOP", prod)
-                tipo = "Entrada" if cfop.startswith("1") or cfop.startswith("2") else (
-                    "Entrada" if "BDA COMERCIO" in nome_destinatario else "Saída"
-                )
-
+                # Classificação de tipo da nota
+                cfop = linha.get("CFOP", "")
+                cnpj_emit = linha.get("Emitente CNPJ", "")
+                cnpj_dest = linha.get("Destinatário CNPJ", "")
+                tipo = "Entrada" if cfop.startswith("1") or cfop.startswith("2") or cnpj_emit == cnpj_dest else "Saída"
                 linha["Tipo"] = tipo
 
-                entradas.append(linha) if tipo == "Entrada" else saidas.append(linha)
+                if tipo == "Entrada":
+                    entradas.append(linha)
+                else:
+                    saidas.append(linha)
         except Exception as e:
             print(f"Erro ao processar {caminho}: {e}")
 
@@ -77,10 +85,12 @@ def processar_arquivos_xml(lista_de_caminhos):
     try:
         with open("ordem_colunas.json", "r", encoding="utf-8") as f:
             ordem = json.load(f)["ordem_preferida"]
-        colunas_entrada = [c for c in ordem if c in df_entrada.columns] + [c for c in df_entrada.columns if c not in ordem]
-        colunas_saida = [c for c in ordem if c in df_saida.columns] + [c for c in df_saida.columns if c not in ordem]
-        df_entrada = df_entrada[colunas_entrada]
-        df_saida = df_saida[colunas_saida]
+        if not df_entrada.empty:
+            colunas_entrada = [c for c in ordem if c in df_entrada.columns] + [c for c in df_entrada.columns if c not in ordem]
+            df_entrada = df_entrada[colunas_entrada]
+        if not df_saida.empty:
+            colunas_saida = [c for c in ordem if c in df_saida.columns] + [c for c in df_saida.columns if c not in ordem]
+            df_saida = df_saida[colunas_saida]
     except Exception as e:
         print("Erro ao reordenar colunas:", e)
 
