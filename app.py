@@ -115,10 +115,10 @@ if uploaded_files:
             "Auditoria": df_alertas,
             "Resumo": df_resumo,
             "Apuração": df_apuracao,
+    "Detalhamento Fiscal": df_detalhado,
         }
 
         for aba_nome, df in abas.items():
-
             for col in df.columns:
                 if any(key in col for key in formato.get("moeda", [])):
                     df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -126,9 +126,8 @@ if uploaded_files:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
                 elif col in formato.get("inteiro", []):
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
-                elif any(p in col for p in ["Data", "Mês", "Trimestre"]):
+                elif "Data Emissão" in col or "Data Entrada" in col or "Data Saída" in col:
                     df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime("%d/%m/%Y")
-
 
             df.to_excel(writer, sheet_name=aba_nome[:31], index=False)
             worksheet = writer.sheets[aba_nome[:31]]
