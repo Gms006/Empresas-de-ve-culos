@@ -1,11 +1,11 @@
-
 import streamlit as st
 import pandas as pd
 import zipfile
 import tempfile
 import os
 
-from estoque_veiculos import processar_arquivos_xml
+from extrator_veiculos import processar_xmls
+from configurador_planilha import configurar_planilha
 from transformadores_veiculos import gerar_estoque_fiscal, gerar_alertas_auditoria, gerar_kpis, gerar_resumo_mensal
 from apuracao_fiscal import calcular_apuracao
 
@@ -30,12 +30,19 @@ if uploaded_files:
             elif file.name.endswith(".xml"):
                 xml_paths.append(filepath)
 
-        df_entrada, df_saida = processar_arquivos_xml(xml_paths)
+        # 🔹 Novo fluxo modular
+        df_bruto = processar_xmls(xml_paths)
+        df_configurado = configurar_planilha(df_bruto)
+
+        # Separar entradas e saídas
+        df_entrada = df_configurado[df_configurado['Tipo Nota'] == 'Entrada'].copy()
+        df_saida = df_configurado[df_configurado['Tipo Nota'] == 'Saída'].copy()
+
         df_estoque = gerar_estoque_fiscal(df_entrada, df_saida)
 
-        # Diagnóstico
+        # 🔎 Diagnóstico
         st.sidebar.header("🔎 Diagnóstico de Processamento")
-        st.sidebar.write(f"**Total de Notas Processadas:** {len(df_entrada) + len(df_saida)}")
+        st.sidebar.write(f"**Total de Notas Processadas:** {len(df_configurado)}")
         st.sidebar.write(f"**Notas de Entrada:** {len(df_entrada)}")
         st.sidebar.write(f"**Notas de Saída:** {len(df_saida)}")
         st.sidebar.write(f"**Veículos Vendidos:** {df_estoque[df_estoque['Situação'] == 'Vendido'].shape[0]}")
