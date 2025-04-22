@@ -27,14 +27,6 @@ def classificar_produto_linha(row):
     if any(palavra in produto for palavra in veiculo_keywords):
         return "Veículo"
     return "Outro Produto"
-row):
-    chassi = row.get("Chassi", "")
-    placa = row.get("Placa", "")
-    produto = str(row.get("Produto", "")).upper()
-    # Lista de termos que indicam que não é um veículo
-    blacklist = ["PLACA DE CARRO", "PLACA MOTO", "CARREGADOR", "ETIQUETA", "ADESIVO", "TAMPA", "SUPORTE", "CAIXA", "CORDÃO"]
-    if any(palavra in produto for palavra in blacklist):
-        return "Outro Produto"
     if validar_chassi(chassi) or validar_placa(placa):
         return "Veículo"
     if any(palavra in produto for palavra in ["VEICULO", "VEÍCULO", "CARRO", "MOTO", "CAMINHÃO"]):
