@@ -1,87 +1,110 @@
 import pandas as pd
-from lxml import etree
-from collections import Counter
+import xml.etree.ElementTree as ET
+import json
+import re
 
-# ===== JSON EMBUTIDO =====
-MAPA_CAMPOS = {
-    "essenciais": {
-        "CFOP": ["//*[local-name()='CFOP']"],
-        "Data Emissão": ["//*[local-name()='dhEmi']"],
-        "Destinatário Nome": ["//*[local-name()='dest']/*[local-name()='xNome']"],
-        "Valor Total": ["//*[local-name()='vNF']"]
-    },
-    "complementares": {
-        "Chassi": ["//*[local-name()='chassi']"],
-        "Placa": ["//*[local-name()='placa']"],
-        "Renavam": ["//*[local-name()='RENAVAM']"]
-    }
-}
+# ====== Carregar Configurações ======
+with open('mapa_campos_extracao.json', encoding='utf-8') as f:
+    MAPA_CAMPOS = json.load(f)
 
-def extrair_valor_xpath(tree, paths):
-    for path in paths:
-        resultado = tree.xpath(path)
-        if resultado and isinstance(resultado[0], etree._Element):
-            return resultado[0].text
-        elif resultado:
-            return resultado[0]
-    return None
+with open('regex_extracao.json', encoding='utf-8') as f:
+    REGEX_EXTRACAO = json.load(f)
 
-def extrair_dados_xml(xml_path, log_erros):
+with open('empresas_config.json', encoding='utf-8') as f:
+    CONFIG_EMPRESA = json.load(f)['bda']
+
+CNPJS_EMPRESA = CONFIG_EMPRESA['cnpj_emitentes']
+NOMES_EMPRESA = [nome.lower() for nome in CONFIG_EMPRESA['nomes_proprios']]
+
+CFOPS_SAIDA = ["5101", "5102", "5103", "5949", "6101", "6102", "6108", "6949"]
+CLIENTE_FINAL_REF = "cliente final"
+
+# ====== Campos Obrigatórios ======
+CAMPOS_OBRIGATORIOS = ['CFOP', 'Data Emissão', 'Valor Total']
+CAMPOS_COMPLEMENTARES = ['Chassi', 'Placa', 'Emitente CNPJ', 'Destinatário CNPJ', 'Emitente Nome', 'Destinatário Nome']
+
+def extrair_dados_xml(xml_path):
     try:
-        with open(xml_path, 'rb') as f:
-            tree = etree.parse(f)
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
 
         dados = {}
-        for grupo in MAPA_CAMPOS.values():
-            for campo, paths in grupo.items():
-                valor = extrair_valor_xpath(tree, paths)
-                dados[campo] = valor
-                if not valor:
-                    log_erros[f'{campo} ausente'] += 1
+        # Extração via XPath
+        for campo, paths in MAPA_CAMPOS.items():
+            valor = None
+            for path in paths:
+                elemento = root.find(path, ns) or root.find(path)
+                if elemento is not None and elemento.text:
+                    valor = elemento.text.strip()
+                    break
+            dados[campo] = valor
 
-        if not dados['CFOP'] or not dados['Data Emissão'] or not dados['Valor Total']:
-            log_erros['Notas inválidas - dados fiscais incompletos'] += 1
+        # Complementar com Regex
+        texto_xml = ET.tostring(root, encoding='unicode')
+        for campo, padrao in REGEX_EXTRACAO.items():
+            if not dados.get(campo):
+                match = re.search(padrao, texto_xml)
+                if match:
+                    dados[campo] = match.group(1)
+
+        # Validar campos essenciais
+        if any(not dados.get(campo) for campo in CAMPOS_OBRIGATORIOS):
             return None
 
         return dados
     except Exception:
-        log_erros['Erro crítico de parsing'] += 1
         return None
 
+def classificar_tipo_nota(row):
+    emitente_cnpj = (row.get('Emitente CNPJ') or "").zfill(14)
+    destinatario_cnpj = (row.get('Destinatário CNPJ') or "").zfill(14)
+    emitente_nome = (row.get('Emitente Nome') or "").lower()
+    destinatario_nome = (row.get('Destinatário Nome') or "").lower()
+    cfop = str(row.get('CFOP') or "").strip()
+
+    # 1️⃣ CNPJ da Empresa
+    if emitente_cnpj in CNPJS_EMPRESA:
+        return "Saída"
+    if destinatario_cnpj in CNPJS_EMPRESA:
+        return "Entrada"
+
+    # 2️⃣ Nome da Empresa
+    if any(nome in emitente_nome for nome in NOMES_EMPRESA):
+        return "Saída"
+    if any(nome in destinatario_nome for nome in NOMES_EMPRESA):
+        return "Entrada"
+
+    # 3️⃣ Fallback - CFOP ou Cliente Final
+    if cfop in CFOPS_SAIDA:
+        return "Saída"
+    if CLIENTE_FINAL_REF in destinatario_nome:
+        return "Saída"
+
+    # 4️⃣ Caso não identifique
+    return "Entrada"  # Assume Entrada como padrão seguro
+
 def processar_arquivos_xml(xml_paths):
-    log_erros = Counter()
-    registros = [extrair_dados_xml(path, log_erros) for path in xml_paths if path.endswith(".xml")]
-    registros_validos = list(filter(None, registros))
+    registros = [extrair_dados_xml(path) for path in xml_paths if path.endswith(".xml")]
+    df = pd.DataFrame(filter(None, registros))
 
-    df = pd.DataFrame(registros_validos)
-
-    todas_colunas = list(MAPA_CAMPOS['essenciais'].keys()) + list(MAPA_CAMPOS['complementares'].keys())
-    for col in todas_colunas:
+    # Garantir todas as colunas essenciais e complementares
+    for col in set(CAMPOS_OBRIGATORIOS + CAMPOS_COMPLEMENTARES):
         if col not in df.columns:
             df[col] = None
 
-    cfops_saida = ["5101", "5102", "5103", "5949", "6101", "6102", "6108", "6949"]
-    cliente_final_ref = "cliente final"
-
     if not df.empty:
-        df['Tipo Nota'] = df.apply(
-            lambda row: "Saída" if str(row['CFOP']).strip() in cfops_saida or cliente_final_ref in str(row['Destinatário Nome']).lower() else "Entrada",
-            axis=1
-        )
+        df['Tipo Nota'] = df.apply(classificar_tipo_nota, axis=1)
         df['Data Entrada'] = pd.to_datetime(df['Data Emissão'], errors='coerce')
         df['Data Saída'] = df.apply(lambda row: row['Data Emissão'] if row['Tipo Nota'] == "Saída" else pd.NaT, axis=1)
         df['Data Saída'] = pd.to_datetime(df['Data Saída'], errors='coerce')
-        print(f"✅ Classificação aplicada. Total: {len(df)} notas.")
     else:
-        df = pd.DataFrame(columns=todas_colunas + ['Tipo Nota', 'Data Entrada', 'Data Saída'])
-        print("⚠️ DataFrame vazio. Nenhuma nota classificada.")
+        df = pd.DataFrame(columns=list(CAMPOS_OBRIGATORIOS + CAMPOS_COMPLEMENTARES + ['Tipo Nota', 'Data Entrada', 'Data Saída']))
 
-    print(f"📊 RESUMO FINAL")
-    print(f"- XMLs processados: {len(xml_paths)}")
-    print(f"- Notas válidas: {len(registros_validos)}")
-    print(f"- Notas de Entrada: {df[df['Tipo Nota'] == 'Entrada'].shape[0] if not df.empty else 0}")
-    print(f"- Notas de Saída: {df[df['Tipo Nota'] == 'Saída'].shape[0] if not df.empty else 0}")
-    for erro, qtd in log_erros.items():
-        print(f"- {erro}: {qtd}")
+    # Logs
+    print(f"📊 Total XMLs processados: {len(xml_paths)}")
+    print(f"✅ Notas válidas: {len(df)}")
+    print(f"📥 Entradas: {df[df['Tipo Nota'] == 'Entrada'].shape[0]}")
+    print(f"📤 Saídas: {df[df['Tipo Nota'] == 'Saída'].shape[0]}")
 
     return df[df['Tipo Nota'] == "Entrada"].copy(), df[df['Tipo Nota'] == "Saída"].copy()
