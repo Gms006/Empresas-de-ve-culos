@@ -39,7 +39,7 @@ def validar_placa(placa):
         re.fullmatch(VALIDADORES["placa_antiga"], placa)
     )
 
-# ===== Extração Corrigida com lxml + XPath =====
+# ===== Extração Segura com XPath =====
 def extrair_dados_xml(xml_path):
     try:
         log.info(f"Processando XML: {xml_path}")
@@ -56,8 +56,8 @@ def extrair_dados_xml(xml_path):
                     if isinstance(primeiro, etree._Element) and primeiro.text:
                         valor = primeiro.text.strip()
                         break
-                    elif isinstance(primeiro, str):
-                        valor = primeiro.strip()
+                    elif isinstance(primeiro, (str, int, float)):
+                        valor = str(primeiro).strip()
                         break
             dados[campo] = valor
             if not valor and campo in CAMPOS_OBRIGATORIOS:
