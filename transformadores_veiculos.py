@@ -1,145 +1,74 @@
 
-import zipfile
 import pandas as pd
-import streamlit as st
-import tempfile
-import os
-import io
-import json
 
-from estoque_veiculos import processar_arquivos_xml
+def gerar_estoque_fiscal(df_entrada, df_saida):
+    df_entrada = df_entrada.copy()
+    df_saida = df_saida.copy()
 
-# === CARREGAR FORMATO PARA FORMATAR EXIBIÇÃO E EXPORTAÇÃO ===
-with open("formato_colunas.json", "r", encoding="utf-8") as f:
-    formato = json.load(f)
+    df_entrada['Chave'] = df_entrada['Chassi'].fillna('') + df_entrada['Placa'].fillna('')
+    df_saida['Chave'] = df_saida['Chassi'].fillna('') + df_saida['Placa'].fillna('')
 
-# === FORMATADOR PARA EXIBIÇÃO NO SITE ===
-def formatar_df_exibicao(df):
-    df = df.copy()
-    for col in df.columns:
-        if any(key in col for key in formato.get("moeda", [])):
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
-            df[col] = df[col].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-        elif any(key in col for key in formato.get("percentual", [])):
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
-            df[col] = df[col].apply(lambda x: f"{x:.2f}%")
-        elif col in formato.get("inteiro", []):
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
-    return df
+    df_saida = df_saida.drop_duplicates(subset='Chave')
 
-def formatar_kpi(valor):
-    return "R$ {:,.2f}".format(valor).replace(",", "X").replace(".", ",").replace("X", ".")
+    df_estoque = pd.merge(df_entrada, df_saida, on='Chave', how='left', suffixes=('_entrada', '_saida'))
 
-# === CONFIGURAÇÕES INICIAIS ===
-st.set_page_config(page_title="Painel de Veículos", layout="wide")
-st.title("📦 Painel Fiscal - Veículos")
+    df_estoque['Situação'] = df_estoque['Data Saída'].notna().map({True: 'Vendido', False: 'Em Estoque'})
+    df_estoque['Lucro'] = df_estoque['Valor Venda'].astype(float) - df_estoque['Valor Entrada'].astype(float)
 
-# === UPLOAD DE ARQUIVOS ===
-uploaded_files = st.file_uploader("Envie arquivos XML ou ZIP com XMLs", type=["xml", "zip"], accept_multiple_files=True)
+    return df_estoque
 
-if uploaded_files:
-    with st.spinner("🔍 Processando arquivos..."):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            xml_paths = []
+def gerar_alertas_auditoria(df_entrada, df_saida):
+    erros = []
 
-            for file in uploaded_files:
-                filepath = os.path.join(tmpdir, file.name)
-                with open(filepath, "wb") as f:
-                    f.write(file.read())
+    df_entrada = df_entrada.copy()
+    df_saida = df_saida.copy()
 
-                if file.name.endswith(".zip"):
-                    with zipfile.ZipFile(filepath, "r") as zip_ref:
-                        zip_ref.extractall(tmpdir)
-                        xml_paths += [
-                            os.path.join(tmpdir, name)
-                            for name in zip_ref.namelist()
-                            if name.endswith(".xml")
-                        ]
-                elif file.name.endswith(".xml"):
-                    xml_paths.append(filepath)
+    df_entrada['Chave'] = df_entrada['Chassi'].fillna('') + df_entrada['Placa'].fillna('')
+    df_saida['Chave'] = df_saida['Chassi'].fillna('') + df_saida['Placa'].fillna('')
 
-            df_entrada, df_saida = processar_arquivos_xml(xml_paths)
-            df_estoque = gerar_estoque_fiscal(df_entrada, df_saida)
+    duplicadas_entrada = df_entrada[df_entrada.duplicated('Chave', keep=False)]
+    duplicadas_saida = df_saida[df_saida.duplicated('Chave', keep=False)]
 
-            if df_estoque.empty or "Situação" not in df_estoque.columns:
-                st.warning("⚠️ Nenhum veículo identificado nos arquivos XML enviados.")
-                st.stop()
+    for _, row in duplicadas_entrada.iterrows():
+        erros.append({
+            'Tipo': 'Entrada',
+            'Nota Fiscal': row.get('Nota Fiscal'),
+            'Data': row.get('Data Emissão'),
+            'Chave': row['Chave'],
+            'Erro': 'DUPLICIDADE_ENTRADA',
+            'Categoria': 'Crítico'
+        })
 
-            df_alertas = gerar_alertas_auditoria(df_entrada, df_saida)
-            kpis = gerar_kpis(df_estoque)
-            df_resumo = gerar_resumo_mensal(df_estoque)
+    for _, row in duplicadas_saida.iterrows():
+        erros.append({
+            'Tipo': 'Saída',
+            'Nota Fiscal': row.get('Nota Fiscal'),
+            'Data': row.get('Data Emissão'),
+            'Chave': row['Chave'],
+            'Erro': 'DUPLICIDADE_SAIDA',
+            'Categoria': 'Crítico'
+        })
 
-    st.success("✅ Arquivos processados com sucesso!")
+    return pd.DataFrame(erros)
 
-    # === INTERFACE ===
-    aba = st.sidebar.radio("Escolha o relatório", ["📦 Estoque", "🕵️ Auditoria", "📈 KPIs e Resumo"])
+def gerar_kpis(df_estoque):
+    df = df_estoque[df_estoque['Situação'] == 'Vendido']
+    total_vendido = df['Valor Venda'].sum()
+    lucro_total = df['Lucro'].sum()
+    estoque_atual = df_estoque[df_estoque['Situação'] == 'Em Estoque']['Valor Entrada'].sum()
 
-    def exibir_tabela(titulo, df):
-        st.subheader(titulo)
-        st.dataframe(formatar_df_exibicao(df), use_container_width=True)
+    return {
+        "Total Vendido (R$)": total_vendido,
+        "Lucro Total (R$)": lucro_total,
+        "Estoque Atual (R$)": estoque_atual
+    }
 
-    if aba == "📦 Estoque":
-        exibir_tabela("📦 Veículos em Estoque e Vendidos", df_estoque)
-
-    elif aba == "🕵️ Auditoria":
-        exibir_tabela("🕵️ Relatório de Alertas Fiscais", df_alertas)
-
-    elif aba == "📈 KPIs e Resumo":
-        st.subheader("📊 Indicadores de Desempenho")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Vendido (R$)", formatar_kpi(kpis["Total Vendido (R$)"]))
-        col2.metric("Lucro Total (R$)", formatar_kpi(kpis["Lucro Total (R$)"]))
-        col3.metric("Estoque Atual (R$)", formatar_kpi(kpis["Estoque Atual (R$)"]))
-
-        exibir_tabela("📄 Resumo Mensal", df_resumo)
-
-    # === DOWNLOAD EXCEL ===
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        workbook = writer.book
-        real_fmt = workbook.add_format({"num_format": "R$ #,##0.00"})
-        pct_fmt = workbook.add_format({"num_format": "0.00%"})
-        text_fmt = workbook.add_format({"num_format": "@"})
-        int_fmt = workbook.add_format({"num_format": "0"})
-
-        abas = {
-            "Entradas": df_entrada,
-            "Saídas": df_saida,
-            "Estoque": df_estoque,
-            "Auditoria": df_alertas,
-            "Resumo": df_resumo,
-        }
-
-        
-        for aba_nome, df in abas.items():
-            # Garantir que colunas monetárias estejam em formato float antes da formatação
-            for col in df.columns:
-                if any(key in col for key in formato.get("moeda", [])):
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
-                elif any(key in col for key in formato.get("percentual", [])):
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
-                elif col in formato.get("inteiro", []):
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
-                elif "Data Emissão" in col or "Data Entrada" in col or "Data Saída" in col:
-                    df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime("%d/%m/%Y")
-    
-            df.to_excel(writer, sheet_name=aba_nome, index=False)
-            worksheet = writer.sheets[aba_nome]
-            for col_num, col_name in enumerate(df.columns):
-                if any(key in col_name for key in formato.get("moeda", [])):
-                    worksheet.set_column(col_num, col_num, 14, real_fmt)
-                elif any(key in col_name for key in formato.get("percentual", [])):
-                    worksheet.set_column(col_num, col_num, 12, pct_fmt)
-                elif any(key in col_name for key in formato.get("texto", [])):
-                    worksheet.set_column(col_num, col_num, 20, text_fmt)
-                elif col_name in formato.get("inteiro", []):
-                    worksheet.set_column(col_num, col_num, 10, int_fmt)
-                else:
-                    worksheet.set_column(col_num, col_num, 18)
-
-    st.download_button(
-        label="📥 Baixar Relatório Completo",
-        data=output.getvalue(),
-        file_name="relatorio_completo_veiculos.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+def gerar_resumo_mensal(df_estoque):
+    df = df_estoque[df_estoque['Situação'] == 'Vendido'].copy()
+    df['Mês'] = pd.to_datetime(df['Data Saída'], errors='coerce').dt.to_period("M").dt.start_time
+    resumo = df.groupby('Mês').agg({
+        'Valor Entrada': 'sum',
+        'Valor Venda': 'sum',
+        'Lucro': 'sum'
+    }).reset_index()
+    return resumo
