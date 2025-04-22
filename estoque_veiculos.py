@@ -37,10 +37,12 @@ def aplicar_tipo(valor, campo, formato):
 
 def aplicar_regex_extracao(texto):
     resultado = {}
-    for campo, padrao in regex.items():
-        match = re.search(padrao, texto, flags=re.IGNORECASE)
-        if match:
-            resultado[campo] = match.group(1).strip()
+    for campo, padroes in regex.items():
+        for padrao in padroes if isinstance(padroes, list) else [padroes]:
+            match = re.search(padrao, texto, flags=re.IGNORECASE)
+            if match:
+                resultado[campo] = match.group(1).strip()
+                break
     return resultado
 
 def reordenar_colunas(df, ordem):
@@ -75,6 +77,7 @@ def processar_arquivos_xml(lista_de_caminhos):
                 linha = {}
                 prod = det.find("ns:prod", ns)
                 imposto = det.find("ns:imposto", ns)
+                infAdProd = det.find("ns:infAdProd", ns)
 
                 # Extração padrão pelo mapa
                 for secao, campos in mapa.items():
@@ -94,9 +97,12 @@ def processar_arquivos_xml(lista_de_caminhos):
                             valor = obter_valor(ns, xml_tag, contexto)
                             linha[nome_coluna] = aplicar_tipo(valor, nome_coluna, formato)
 
-                # Extração adicional de campos veiculares via regex
+                # Extração adicional com regex sobre xProd e infAdProd
                 xProd_texto = obter_valor(ns, "xProd", prod)
-                campos_extras = aplicar_regex_extracao(xProd_texto)
+                adProd_texto = infAdProd.text if infAdProd is not None else ""
+                texto_completo = f"{xProd_texto} {adProd_texto}".strip()
+
+                campos_extras = aplicar_regex_extracao(texto_completo)
                 for campo, valor in campos_extras.items():
                     nome_coluna = {
                         "chassi": "Chassi",
