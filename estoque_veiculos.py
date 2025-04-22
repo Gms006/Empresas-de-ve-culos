@@ -3,56 +3,56 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 import json
 import re
+from collections import Counter
 
 with open('mapa_campos_extracao.json', encoding='utf-8') as f:
     MAPA_CAMPOS = json.load(f)
 with open('regex_extracao.json', encoding='utf-8') as f:
     REGEX_EXTRACAO = json.load(f)
 
-def extrair_dados_xml(xml_path):
+def extrair_dados_xml(xml_path, contador_falhas, erros_criticos):
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
         ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
 
         dados = {}
-        with open("log_extracao.txt", "a", encoding="utf-8") as log:
-            log.write(f"\n📂 Processando: {xml_path}\n")
-            for campo, paths in MAPA_CAMPOS.items():
-                valor = None
-                for path in paths:
-                    elemento = root.find(path, ns) or root.find(path)
-                    if elemento is not None and elemento.text:
-                        valor = elemento.text
-                        break
-                dados[campo] = valor
-                if valor:
-                    log.write(f"✅ {campo}: {valor}\n")
-                else:
-                    log.write(f"⚠️ {campo} não encontrado\n")
+        for campo, paths in MAPA_CAMPOS.items():
+            if isinstance(paths, str):
+                paths = [paths]
+            valor = None
+            for path in paths:
+                elemento = root.find(path, ns) or root.find(path)
+                if elemento is not None and elemento.text:
+                    valor = elemento.text
+                    break
+            dados[campo] = valor
+            if not valor:
+                contador_falhas[campo] += 1
 
-            texto_xml = ET.tostring(root, encoding='unicode')
-            for campo, padrao in REGEX_EXTRACAO.items():
-                match = re.search(padrao, texto_xml)
-                if match:
-                    dados[campo] = match.group(1)
-                    log.write(f"✅ Regex {campo}: {dados[campo]}\n")
-                else:
-                    log.write(f"⚠️ Regex não encontrou o campo: {campo}\n")
+        texto_xml = ET.tostring(root, encoding='unicode')
+        for campo, padrao in REGEX_EXTRACAO.items():
+            match = re.search(padrao, texto_xml)
+            if match:
+                dados[campo] = match.group(1)
+            else:
+                contador_falhas[campo] += 1
+
         return dados
     except Exception as e:
-        with open("log_extracao.txt", "a", encoding="utf-8") as log:
-            log.write(f"❌ Erro ao processar {xml_path}: {e}\n")
+        erros_criticos.append(f"{xml_path} -> {str(e)}")
         return None
 
 def processar_arquivos_xml(xml_paths):
-    # Limpar log anterior
     open("log_extracao.txt", "w").close()
 
     registros = []
+    contador_falhas = Counter()
+    erros_criticos = []
+
     for path in xml_paths:
         if path.endswith(".xml"):
-            registro = extrair_dados_xml(path)
+            registro = extrair_dados_xml(path, contador_falhas, erros_criticos)
             if registro:
                 registros.append(registro)
 
@@ -78,11 +78,26 @@ def processar_arquivos_xml(xml_paths):
     entradas = df[df['Tipo Nota'] == "Entrada"].shape[0]
     saidas = df[df['Tipo Nota'] == "Saída"].shape[0]
 
+    # Gerar LOG RESUMIDO
     with open("log_extracao.txt", "a", encoding="utf-8") as log:
-        log.write(f"\n📊 Resumo Final:\n")
-        log.write(f"- Total de XMLs processados: {len(xml_paths)}\n")
+        log.write(f"📊 RESUMO DA EXTRAÇÃO\n")
+        log.write(f"- XMLs processados: {len(xml_paths)}\n")
+        log.write(f"- Sucesso: {len(registros)}\n")
+        log.write(f"- Erros críticos: {len(erros_criticos)}\n")
         log.write(f"- Notas de Entrada: {entradas}\n")
-        log.write(f"- Notas de Saída: {saidas}\n")
+        log.write(f"- Notas de Saída: {saidas}\n\n")
+
+        if contador_falhas:
+            log.write("🚨 Campos mais ausentes:\n")
+            for campo, qtd in contador_falhas.most_common():
+                log.write(f"- {campo}: {qtd} falhas\n")
+
+        if erros_criticos:
+            log.write("\n❌ Erros críticos detectados:\n")
+            for erro in erros_criticos[:5]:
+                log.write(f"{erro}\n")
+            if len(erros_criticos) > 5:
+                log.write(f"... e mais {len(erros_criticos) - 5} erros\n")
 
     df['Data Entrada'] = pd.to_datetime(df['Data Emissão'], errors='coerce')
     df['Data Saída'] = df.apply(lambda row: row['Data Emissão'] if row['Tipo Nota'] == "Saída" else pd.NaT, axis=1)
