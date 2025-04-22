@@ -1,71 +1,50 @@
 
-import streamlit as st
 import pandas as pd
-import io
-import json
-from filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
-from formatador_utils import formatar_moeda, formatar_percentual
 
-with open("formato_colunas.json", "r", encoding="utf-8") as f:
-    formato = json.load(f)
+def calcular_apuracao(df_estoque):
+    df = df_estoque.copy()
+    df = df[df["Situação"] == "Vendido"].copy()
+    df["Data Saída"] = pd.to_datetime(df["Data Saída"], errors="coerce")
+    df["Trimestre"] = df["Data Saída"].dt.to_period("Q").dt.start_time
 
-def formatar_df_exibicao(df):
-    df = df.copy()
-    for col in df.columns:
-        if any(key in col for key in formato.get("moeda", [])):
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
-            df[col] = df[col].apply(formatar_moeda)
-        elif any(key in col for key in formato.get("percentual", [])):
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
-            df[col] = df[col].apply(formatar_percentual)
-        elif col in formato.get("inteiro", []):
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
-        elif any(p in col for p in ["Data", "Mês", "Trimestre"]):
-            df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime("%d/%m/%Y")
-    return df
+    # Calcular tributos por veículo
+    df["ICMS Presumido"] = df["Lucro"].astype(float) * 0.19
+    df["PIS/COFINS Presumido"] = df["Lucro"].astype(float) * 0.0365
+    df["Base IRPJ/CSLL"] = df["Lucro"].astype(float) * 0.32
+    df["IRPJ"] = df["Base IRPJ/CSLL"] * 0.15
+    df["CSLL"] = df["Base IRPJ/CSLL"] * 0.09
+    df["Adicional IRPJ"] = 0.0
+    df["Total Tributos"] = df["ICMS Presumido"] + df["PIS/COFINS Presumido"] + df["IRPJ"] + df["CSLL"]
+    df["Lucro Líquido"] = df["Lucro"] - df["Total Tributos"]
 
-def criar_aba_padrao(titulo, df, coluna_data=None):
-    st.subheader(titulo)
+    agrupado = df.groupby("Trimestre").agg({
+        "Lucro": "sum",
+        "ICMS Presumido": "sum",
+        "PIS/COFINS Presumido": "sum",
+        "Base IRPJ/CSLL": "sum",
+        "IRPJ": "sum",
+        "CSLL": "sum",
+        "Total Tributos": "sum",
+        "Lucro Líquido": "sum"
+    }).reset_index()
 
-    if coluna_data:
-        anos, meses = obter_anos_meses_unicos(df, coluna_data)
-        ano = st.sidebar.selectbox(f"Ano ({titulo})", [None] + anos, key=f"ano_{titulo}")
-        mes = st.sidebar.selectbox(f"Mês ({titulo})", [None] + meses, key=f"mes_{titulo}")
-        df = aplicar_filtro_periodo(df, coluna_data, ano, mes)
+    adicional_irpj = []
+    for _, row in agrupado.iterrows():
+        base = row["Base IRPJ/CSLL"]
+        adicional = (base - 60000) * 0.10 if base > 60000 else 0.0
+        adicional_irpj.append(adicional)
 
-    df_formatado = formatar_df_exibicao(df)
-    st.dataframe(df_formatado, use_container_width=True)
+    agrupado["Adicional IRPJ"] = adicional_irpj
+    agrupado["Total Tributos"] += agrupado["Adicional IRPJ"]
+    agrupado["Lucro Líquido"] -= agrupado["Adicional IRPJ"]
 
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-        df_temp = df.copy()
-        for col in df_temp.columns:
-            if any(key in col for key in formato.get("moeda", [])):
-                df_temp[col] = pd.to_numeric(df_temp[col], errors='coerce')
-            elif any(key in col for key in formato.get("percentual", [])):
-                df_temp[col] = pd.to_numeric(df_temp[col], errors='coerce')
-            elif col in formato.get("inteiro", []):
-                df_temp[col] = pd.to_numeric(df_temp[col], errors='coerce').fillna(0).astype(int)
-            elif any(p in col for p in ["Data", "Mês", "Trimestre"]):
-                df_temp[col] = pd.to_datetime(df_temp[col], errors='coerce').dt.strftime("%d/%m/%Y")
+    agrupado = agrupado[[
+        "Trimestre", "Lucro", "ICMS Presumido", "PIS/COFINS Presumido",
+        "Base IRPJ/CSLL", "IRPJ", "Adicional IRPJ", "CSLL",
+        "Total Tributos", "Lucro Líquido"
+    ]]
 
-        df_temp.to_excel(writer, sheet_name=titulo[:31], index=False)
-        worksheet = writer.sheets[titulo[:31]]
-        for i, col in enumerate(df_temp.columns):
-            if any(key in col for key in formato.get("moeda", [])):
-                worksheet.set_column(i, i, 14, writer.book.add_format({"num_format": "R$ #,##0.00"}))
-            elif any(key in col for key in formato.get("percentual", [])):
-                worksheet.set_column(i, i, 12, writer.book.add_format({"num_format": "0.00%"}))
-            elif any(key in col for key in formato.get("texto", [])):
-                worksheet.set_column(i, i, 20, writer.book.add_format({"num_format": "@"}))
-            elif col in formato.get("inteiro", []):
-                worksheet.set_column(i, i, 10, writer.book.add_format({"num_format": "0"}))
-            else:
-                worksheet.set_column(i, i, 18)
+    # Remover colunas auxiliares como Unnamed caso existam no df detalhado
+    df = df.drop(columns=[col for col in df.columns if col.startswith("Unnamed")], errors="ignore")
 
-    st.download_button(
-        label=f"📥 Baixar {titulo}.xlsx",
-        data=buffer.getvalue(),
-        file_name=f"{titulo}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    return agrupado, df
