@@ -5,8 +5,8 @@ import zipfile
 import tempfile
 import os
 
-from estoque_veiculos_corrigido_final import processar_arquivos_xml
-from transformadores_veiculos_corrigido_final import gerar_estoque_fiscal, gerar_alertas_auditoria, gerar_kpis, gerar_resumo_mensal
+from estoque_veiculos import processar_arquivos_xml
+from transformadores_veiculos import gerar_estoque_fiscal, gerar_alertas_auditoria, gerar_kpis, gerar_resumo_mensal
 from apuracao_fiscal import calcular_apuracao
 
 st.set_page_config(page_title="Painel Fiscal de Veículos", layout="wide")
