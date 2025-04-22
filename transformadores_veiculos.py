@@ -3,7 +3,7 @@ import re
 import json
 from datetime import datetime
 
-# Carregar validadores de chassi e placa
+# === Validação por JSON ===
 with open("validador_veiculo.json", "r", encoding="utf-8") as f:
     validadores = json.load(f)
 
@@ -16,7 +16,7 @@ def validar_placa(placa):
     padrao2 = validadores.get("placa_antiga")
     return isinstance(placa, str) and (re.match(padrao1, placa) or re.match(padrao2, placa))
 
-# Carregar palavras-chave de classificação
+# === Classificação por JSON ===
 with open("classificacao_produto.json", "r", encoding="utf-8") as f:
     classificacao = json.load(f)
 
@@ -30,21 +30,19 @@ def classificar_produto_linha(row):
 
     if any(palavra in produto for palavra in blacklist):
         return "Outro Produto"
-
     if validar_chassi(chassi) or validar_placa(placa):
         return "Veículo"
-
     if any(palavra in produto for palavra in veiculo_keywords):
         return "Veículo"
-
     return "Outro Produto"
 
+# === Estoque Fiscal ===
 def gerar_estoque_fiscal(df_entrada, df_saida):
     df_entrada["Tipo Produto"] = df_entrada.apply(classificar_produto_linha, axis=1)
     df_saida["Tipo Produto"] = df_saida.apply(classificar_produto_linha, axis=1)
 
     df_entrada = df_entrada[df_entrada["Tipo Produto"] == "Veículo"]
-    df_saida = df_saida[df_saida["Tipo Produto"] == "Veículo"]
+    df_saida = df_saida[df_entrada["Tipo Produto"] == "Veículo"]
 
     estoque = []
     entradas = df_entrada.to_dict("records")
@@ -69,6 +67,7 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
 
     return pd.DataFrame(estoque)
 
+# === Auditoria ===
 def gerar_alertas_auditoria(df_entrada, df_saida):
     df_entrada["Tipo Produto"] = df_entrada.apply(classificar_produto_linha, axis=1)
     df_saida["Tipo Produto"] = df_saida.apply(classificar_produto_linha, axis=1)
@@ -78,24 +77,31 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
 
     alertas = []
 
-    def agrupar_validos(df):
-        chassi = df["Chassi"] if "Chassi" in df.columns else pd.Series(dtype=object)
-        placa = df["Placa"] if "Placa" in df.columns else pd.Series(dtype=object)
-        df_validos = df[chassi.fillna(placa).astype(bool)]
-        return df_validos.groupby(chassi.fillna(placa))
+    def obter_chave(df):
+        if "Chassi" in df.columns and "Placa" in df.columns:
+            return df["Chassi"].fillna(df["Placa"])
+        elif "Chassi" in df.columns:
+            return df["Chassi"]
+        elif "Placa" in df.columns:
+            return df["Placa"]
+        else:
+            return pd.Series([""] * len(df))
 
     for tipo, df in [("Entrada", df_entrada), ("Saída", df_saida)]:
-        duplicados = agrupar_validos(df).filter(lambda x: len(x) > 1)
-        for _, grupo in duplicados.groupby(grupo["Chassi"].fillna(grupo["Placa"])):
+        chave = obter_chave(df)
+        duplicados = df[chave.notna()].groupby(chave).filter(lambda x: len(x) > 1)
+
+        for _, grupo in duplicados.groupby(obter_chave(duplicados)):
+            chave_valor = grupo["Chassi"].iloc[0] if "Chassi" in grupo.columns and pd.notna(grupo["Chassi"].iloc[0]) else grupo["Placa"].iloc[0]
             alertas.append({
                 "Tipo": tipo,
                 "Erro": "Duplicidade",
                 "Categoria": "Erro Crítico",
-                "Chassi/Placa": grupo["Chassi"].iloc[0] or grupo["Placa"].iloc[0],
+                "Chassi/Placa": chave_valor,
                 "Notas": ", ".join(grupo["Nota Fiscal"].astype(str))
             })
 
-    chaves_entrada = set(df_entrada["Chassi"].fillna(df_entrada["Placa"]))
+    chaves_entrada = set(obter_chave(df_entrada))
     for _, s in df_saida.iterrows():
         chave = s.get("Chassi") or s.get("Placa")
         if chave and chave not in chaves_entrada:
@@ -104,10 +110,10 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
                 "Erro": "Saída sem entrada",
                 "Categoria": "Erro Crítico",
                 "Chassi/Placa": chave,
-                "Notas": s["Nota Fiscal"]
+                "Notas": s.get("Nota Fiscal")
             })
 
-    chaves_saida = set(df_saida["Chassi"].fillna(df_saida["Placa"]))
+    chaves_saida = set(obter_chave(df_saida))
     for _, e in df_entrada.iterrows():
         chave = e.get("Chassi") or e.get("Placa")
         if chave and chave not in chaves_saida:
@@ -116,11 +122,12 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
                 "Erro": "Entrada sem correspondente saída",
                 "Categoria": "Erro Informativo",
                 "Chassi/Placa": chave,
-                "Notas": e["Nota Fiscal"]
+                "Notas": e.get("Nota Fiscal")
             })
 
     return pd.DataFrame(alertas)
 
+# === KPIs ===
 def gerar_kpis(df_estoque):
     vendidos = df_estoque[df_estoque["Situação"] == "Vendido"]
     em_estoque = df_estoque[df_estoque["Situação"] == "Em Estoque"]
@@ -134,6 +141,7 @@ def gerar_kpis(df_estoque):
         "Veículos em Estoque": len(em_estoque)
     }
 
+# === Resumo Mensal ===
 def gerar_resumo_mensal(df_estoque):
     df = df_estoque.copy()
     df["Mês"] = pd.to_datetime(df["Data Entrada"], dayfirst=True, errors='coerce').dt.to_period("M")
