@@ -74,8 +74,14 @@ def extrair_dados_xml(xml_path):
     except Exception:
         return None
 
-# ===== Classificação =====
+# ===== Classificação com Prioridade no Tipo NF =====
 def classificar_tipo_nota(row):
+    tipo_nf = str(row.get('Tipo NF') or "").strip()
+    if tipo_nf == "1":
+        return "Saída"
+    if tipo_nf == "0":
+        return "Entrada"
+
     emitente_cnpj = (row.get('Emitente CNPJ') or "").zfill(14)
     destinatario_cnpj = (row.get('Destinatário CNPJ') or "").zfill(14)
     emitente_nome = (row.get('Emitente Nome') or "").lower()
@@ -94,8 +100,7 @@ def classificar_tipo_nota(row):
         return "Saída"
     if CLIENTE_FINAL_REF in destinatario_nome:
         return "Saída"
-
-    return "Entrada"  # Padrão seguro
+    return "Entrada"
 
 # ===== Processamento Principal =====
 def processar_arquivos_xml(xml_paths):
