@@ -16,12 +16,15 @@ def extrair_dados_xml(xml_path):
         ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
 
         dados = {}
-        for campo, path in MAPA_CAMPOS.items():
-            elemento = root.find(path, ns) or root.find(path)
-            if elemento is not None and elemento.text:
-                dados[campo] = elemento.text
-            else:
-                dados[campo] = None
+        for campo, paths in MAPA_CAMPOS.items():
+            valor = None
+            for path in paths:
+                elemento = root.find(path, ns) or root.find(path)
+                if elemento is not None and elemento.text:
+                    valor = elemento.text
+                    break
+            dados[campo] = valor
+            if not valor:
                 print(f"⚠️ Campo não encontrado: {campo} no XML {xml_path}")
 
         texto_xml = ET.tostring(root, encoding='unicode')
@@ -30,7 +33,6 @@ def extrair_dados_xml(xml_path):
             if match:
                 dados[campo] = match.group(1)
             else:
-                dados[campo] = None
                 print(f"⚠️ Regex não encontrou o campo: {campo} no XML {xml_path}")
 
         return dados
@@ -49,14 +51,13 @@ def processar_arquivos_xml(xml_paths):
     df = pd.DataFrame(registros)
 
     if df.empty:
-        print("⚠️ Nenhum dado extraído dos XMLs. Verifique o mapa de campos e as regex.")
+        print("⚠️ Nenhum dado extraído dos XMLs.")
 
     colunas_obrigatorias = ['Chassi', 'Placa', 'CFOP', 'Data Emissão', 'Destinatário Nome', 'Valor Total', 'Produto', 'Valor Entrada']
     for col in colunas_obrigatorias:
         if col not in df.columns:
             df[col] = None
 
-    # Classificação mais robusta
     cfops_saida = ["5101", "5102", "5103", "5949", "6101", "6102", "6108", "6949"]
     cliente_final_ref = "cliente final"
 
