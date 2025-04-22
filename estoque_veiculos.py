@@ -63,6 +63,8 @@ def processar_arquivos_xml(xml_paths):
         df['Data Entrada'] = pd.to_datetime(df['Data Emissão'], errors='coerce')
         df['Data Saída'] = df.apply(lambda row: row['Data Emissão'] if row['Tipo Nota'] == "Saída" else pd.NaT, axis=1)
         df['Data Saída'] = pd.to_datetime(df['Data Saída'], errors='coerce')
+    else:
+        df['Tipo Nota'] = None  # Garantir que a coluna exista
 
     entradas = df[df['Tipo Nota'] == "Entrada"].shape[0] if 'Tipo Nota' in df.columns else 0
     saidas = df[df['Tipo Nota'] == "Saída"].shape[0] if 'Tipo Nota' in df.columns else 0
