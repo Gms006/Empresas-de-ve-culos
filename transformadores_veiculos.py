@@ -8,7 +8,6 @@ import io
 import json
 
 from estoque_veiculos import processar_arquivos_xml
-from transformadores_veiculos import gerar_estoque_fiscal, gerar_alertas_auditoria, gerar_kpis, gerar_resumo_mensal
 
 # === CARREGAR FORMATO PARA FORMATAR EXIBIÇÃO E EXPORTAÇÃO ===
 with open("formato_colunas.json", "r", encoding="utf-8") as f:
