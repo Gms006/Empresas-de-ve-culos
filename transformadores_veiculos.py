@@ -5,26 +5,36 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     df_entrada = df_entrada.copy()
     df_saida = df_saida.copy()
 
+    # Garantir chave única
     df_entrada['Chave'] = df_entrada['Chassi'].fillna('').astype(str) + df_entrada['Placa'].fillna('').astype(str)
     df_saida['Chave'] = df_saida['Chassi'].fillna('').astype(str) + df_saida['Placa'].fillna('').astype(str)
 
     df_saida = df_saida.drop_duplicates(subset='Chave')
+
+    # Realiza o merge
     df_estoque = pd.merge(df_entrada, df_saida, on='Chave', how='left', suffixes=('_entrada', '_saida'))
 
-    col_saida = 'Data Saída_saida'
-    col_alvo = col_saida if col_saida in df_estoque.columns else 'Data Saída'
-    if col_alvo in df_estoque.columns:
-        df_estoque['Situação'] = df_estoque[col_alvo].notna().map({True: 'Vendido', False: 'Em Estoque'})
-    else:
-        df_estoque['Situação'] = "Desconhecida"
-
-    df_estoque['Lucro'] = df_estoque['Valor Venda'].astype(float) - df_estoque['Valor Entrada'].astype(float)
-
-    df_estoque.rename(columns={
+    # Renomear colunas críticas ANTES de qualquer cálculo
+    renomear = {
         "Data Saída_saida": "Data Saída",
         "Valor Venda_saida": "Valor Venda",
         "Nota Fiscal_saida": "Nota Fiscal Saída"
-    }, inplace=True)
+    }
+
+    for col_old, col_new in renomear.items():
+        if col_old in df_estoque.columns:
+            df_estoque.rename(columns={col_old: col_new}, inplace=True)
+        else:
+            df_estoque[col_new] = None  # Garante que a coluna exista, mesmo que vazia
+
+    # Definir Situação de forma segura
+    df_estoque['Situação'] = df_estoque['Data Saída'].notna().map({True: 'Vendido', False: 'Em Estoque'})
+
+    # Calcular Lucro apenas se ambas as colunas existirem
+    if 'Valor Venda' in df_estoque.columns and 'Valor Entrada' in df_estoque.columns:
+        df_estoque['Lucro'] = df_estoque['Valor Venda'].astype(float).fillna(0) - df_estoque['Valor Entrada'].astype(float).fillna(0)
+    else:
+        df_estoque['Lucro'] = 0.0
 
     return df_estoque
 
@@ -60,7 +70,6 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
         })
 
     return pd.DataFrame(erros)
-
 
     for _, row in duplicadas_saida.iterrows():
         erros.append({
