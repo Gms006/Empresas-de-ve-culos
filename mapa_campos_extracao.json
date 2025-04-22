@@ -1,0 +1,39 @@
+{
+  "ide": {
+    "nNF": "Nota Fiscal",
+    "serie": "Série",
+    "dhEmi": "Data Emissão"
+  },
+  "prod": {
+    "xProd": "Produto",
+    "cProd": "Código Produto",
+    "CFOP": "CFOP",
+    "qCom": "Quantidade",
+    "vUnCom": "Valor Unitário",
+    "vProd": "Valor Total",
+    "NCM": "NCM"
+  },
+  "emit": {
+    "CNPJ": "Emitente CNPJ",
+    "xNome": "Emitente Nome"
+  },
+  "dest": {
+    "CNPJ": "Destinatário CNPJ",
+    "xNome": "Destinatário Nome"
+  },
+  "ICMS": {
+    "vICMS": "ICMS Valor (R$)",
+    "pICMS": "ICMS Alíquota (%)",
+    "CST": "ICMS CST",
+    "CSOSN": "ICMS CSOSN",
+    "vBC": "ICMS Base Cálculo"
+  },
+  "PIS": {
+    "vPIS": "PIS Valor (R$)",
+    "pPIS": "PIS Alíquota (%)"
+  },
+  "COFINS": {
+    "vCOFINS": "COFINS Valor (R$)",
+    "pCOFINS": "COFINS Alíquota (%)"
+  }
+}
