@@ -1,3 +1,4 @@
+
 import pandas as pd
 import re
 import json
@@ -42,7 +43,7 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     df_saida["Tipo Produto"] = df_saida.apply(classificar_produto_linha, axis=1)
 
     df_entrada = df_entrada[df_entrada["Tipo Produto"] == "Veículo"]
-    df_saida = df_saida[df_entrada["Tipo Produto"] == "Veículo"]
+    df_saida = df_saida[df_saida["Tipo Produto"] == "Veículo"]
 
     estoque = []
     entradas = df_entrada.to_dict("records")
