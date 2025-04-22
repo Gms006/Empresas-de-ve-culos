@@ -10,7 +10,7 @@ import io
 import json
 
 from estoque_veiculos import processar_arquivos_xml
-from transformadores_veiculos_corrigido import gerar_estoque_fiscal, gerar_alertas_auditoria, gerar_kpis, gerar_resumo_mensal
+from transformadores_veiculos import gerar_estoque_fiscal, gerar_alertas_auditoria, gerar_kpis, gerar_resumo_mensal
 
 # === FORMATADORES COM JSON ===
 with open("formato_colunas.json", "r", encoding="utf-8") as f:
