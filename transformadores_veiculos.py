@@ -17,6 +17,10 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
         "Nota Fiscal_saida": "Nota Fiscal Saída"
     }, inplace=True)
 
+    # Garantir que a coluna Data Saída está tratada
+    if 'Data Saída' not in df_estoque.columns:
+        df_estoque['Data Saída'] = pd.NaT
+
     df_estoque['Situação'] = df_estoque['Data Saída'].notna().map({True: 'Vendido', False: 'Em Estoque'})
 
     if 'Valor Entrada' in df_estoque.columns:
