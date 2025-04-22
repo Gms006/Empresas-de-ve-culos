@@ -1,7 +1,7 @@
 
 import streamlit as st
 import pandas as pd
-from estoque_veiculos_reescrito import processar_arquivos_xml
+from estoque_veiculos import processar_arquivos_xml
 from transformadores_veiculos import gerar_estoque_fiscal, gerar_alertas_auditoria, gerar_kpis, gerar_resumo_mensal
 from apuracao_fiscal import calcular_apuracao
 
