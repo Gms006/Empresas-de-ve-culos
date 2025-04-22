@@ -87,7 +87,10 @@ def gerar_kpis(df_estoque):
     df = df_estoque[df_estoque['Situação'] == 'Vendido']
     total_vendido = df['Valor Venda'].astype(float).sum()
     lucro_total = df['Lucro'].astype(float).sum()
+    if 'Valor Entrada' in df_estoque.columns:
     estoque_atual = df_estoque[df_estoque['Situação'] == 'Em Estoque']['Valor Entrada'].astype(float).sum()
+else:
+    estoque_atual = 0.0
 
     return {
         "Total Vendido (R$)": total_vendido,
@@ -99,7 +102,8 @@ def gerar_resumo_mensal(df_estoque):
     df = df_estoque[df_estoque['Situação'] == 'Vendido'].copy()
     df['Mês'] = pd.to_datetime(df['Data Saída'], errors='coerce').dt.to_period("M").dt.start_time
 
-    resumo = df.groupby('Mês').agg({
+    colunas_resumo = {col: 'sum' for col in ['Valor Entrada', 'Valor Venda', 'Lucro'] if col in df.columns}
+resumo = df.groupby('Mês').agg(colunas_resumo)
         'Valor Entrada': 'sum',
         'Valor Venda': 'sum',
         'Lucro': 'sum'
