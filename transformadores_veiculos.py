@@ -1,198 +1,146 @@
 
+import zipfile
 import pandas as pd
-import re
+import streamlit as st
+import tempfile
+import os
+import io
 import json
-from datetime import datetime
 
-# === Validação por JSON ===
-with open("validador_veiculo.json", "r", encoding="utf-8") as f:
-    validadores = json.load(f)
+from estoque_veiculos import processar_arquivos_xml
+from transformadores_veiculos import gerar_estoque_fiscal, gerar_alertas_auditoria, gerar_kpis, gerar_resumo_mensal
 
-def validar_chassi(chassi):
-    padrao = validadores.get("chassi")
-    return isinstance(chassi, str) and bool(re.match(padrao, chassi))
+# === CARREGAR FORMATO PARA FORMATAR EXIBIÇÃO E EXPORTAÇÃO ===
+with open("formato_colunas.json", "r", encoding="utf-8") as f:
+    formato = json.load(f)
 
-def validar_placa(placa):
-    padrao1 = validadores.get("placa_mercosul")
-    padrao2 = validadores.get("placa_antiga")
-    return isinstance(placa, str) and (re.match(padrao1, placa) or re.match(padrao2, placa))
+# === FORMATADOR PARA EXIBIÇÃO NO SITE ===
+def formatar_df_exibicao(df):
+    df = df.copy()
+    for col in df.columns:
+        if any(key in col for key in formato.get("moeda", [])):
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+            df[col] = df[col].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        elif any(key in col for key in formato.get("percentual", [])):
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+            df[col] = df[col].apply(lambda x: f"{x:.2f}%")
+        elif col in formato.get("inteiro", []):
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+    return df
 
-# === Classificação por JSON ===
-with open("classificacao_produto.json", "r", encoding="utf-8") as f:
-    classificacao = json.load(f)
+def formatar_kpi(valor):
+    return "R$ {:,.2f}".format(valor).replace(",", "X").replace(".", ",").replace("X", ".")
 
-veiculo_keywords = classificacao.get("veiculo_keywords", [])
-blacklist = classificacao.get("blacklist", [])
+# === CONFIGURAÇÕES INICIAIS ===
+st.set_page_config(page_title="Painel de Veículos", layout="wide")
+st.title("📦 Painel Fiscal - Veículos")
 
+# === UPLOAD DE ARQUIVOS ===
+uploaded_files = st.file_uploader("Envie arquivos XML ou ZIP com XMLs", type=["xml", "zip"], accept_multiple_files=True)
 
-def classificar_produto_linha(row):
-    chassi = row.get("Chassi", "")
-    placa = row.get("Placa", "")
-    produto = str(row.get("Produto") or "").upper()
+if uploaded_files:
+    with st.spinner("🔍 Processando arquivos..."):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            xml_paths = []
 
-    # Evita falso positivo com palavras proibidas
-    blacklist = ["PLACA DE CARRO", "PLACA MOTO", "CARREGADOR", "ETIQUETA", "TAMPA", "SUPORTE", "ADESIVO", "FILTRO", "CAIXA"]
-    if any(palavra in produto for palavra in blacklist):
-        return "Outro Produto"
+            for file in uploaded_files:
+                filepath = os.path.join(tmpdir, file.name)
+                with open(filepath, "wb") as f:
+                    f.write(file.read())
 
-    if validar_chassi(chassi) or validar_placa(placa):
-        return "Veículo"
+                if file.name.endswith(".zip"):
+                    with zipfile.ZipFile(filepath, "r") as zip_ref:
+                        zip_ref.extractall(tmpdir)
+                        xml_paths += [
+                            os.path.join(tmpdir, name)
+                            for name in zip_ref.namelist()
+                            if name.endswith(".xml")
+                        ]
+                elif file.name.endswith(".xml"):
+                    xml_paths.append(filepath)
 
-    if any(palavra in produto for palavra in veiculo_keywords):
-        return "Veículo"
+            df_entrada, df_saida = processar_arquivos_xml(xml_paths)
+            df_estoque = gerar_estoque_fiscal(df_entrada, df_saida)
 
-    return "Outro Produto"
+            if df_estoque.empty or "Situação" not in df_estoque.columns:
+                st.warning("⚠️ Nenhum veículo identificado nos arquivos XML enviados.")
+                st.stop()
 
-    # Fallback de chassi genérico (17 dígitos válidos)
-    chassi_fallback = ""
-    match_chassi = re.search(r"(?<![A-Z0-9])[A-HJ-NPR-Z0-9]{17}(?![A-Z0-9])", produto)
-    if match_chassi:
-        chassi_fallback = match_chassi.group(0)
-    chassi = row.get("Chassi") or chassi_fallback
+            df_alertas = gerar_alertas_auditoria(df_entrada, df_saida)
+            kpis = gerar_kpis(df_estoque)
+            df_resumo = gerar_resumo_mensal(df_estoque)
 
+    st.success("✅ Arquivos processados com sucesso!")
 
-    if any(palavra in produto for palavra in blacklist):
-        return "Outro Produto"
-    if validar_chassi(chassi) or validar_placa(placa):
-        return "Veículo"
-    if any(palavra in produto for palavra in veiculo_keywords):
-        return "Veículo"
-    return "Outro Produto"
+    # === INTERFACE ===
+    aba = st.sidebar.radio("Escolha o relatório", ["📦 Estoque", "🕵️ Auditoria", "📈 KPIs e Resumo"])
 
-# === Estoque Fiscal ===
-def gerar_estoque_fiscal(df_entrada, df_saida):
-    df_entrada["Tipo Produto"] = df_entrada.apply(classificar_produto_linha, axis=1)
-    df_saida["Tipo Produto"] = df_saida.apply(classificar_produto_linha, axis=1)
+    def exibir_tabela(titulo, df):
+        st.subheader(titulo)
+        st.dataframe(formatar_df_exibicao(df), use_container_width=True)
 
-    df_entrada = df_entrada[df_entrada["Tipo Produto"] == "Veículo"]
-    df_saida = df_saida[df_saida["Tipo Produto"] == "Veículo"]
+    if aba == "📦 Estoque":
+        exibir_tabela("📦 Veículos em Estoque e Vendidos", df_estoque)
 
-    estoque = []
-    entradas = df_entrada.to_dict("records")
-    saidas = df_saida.to_dict("records")
+    elif aba == "🕵️ Auditoria":
+        exibir_tabela("🕵️ Relatório de Alertas Fiscais", df_alertas)
 
-    for ent in entradas:
-        chave_entrada = ent.get("Chassi") or ent.get("Placa") or None
-        if not chave_entrada:
-            continue
+    elif aba == "📈 KPIs e Resumo":
+        st.subheader("📊 Indicadores de Desempenho")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Vendido (R$)", formatar_kpi(kpis["Total Vendido (R$)"]))
+        col2.metric("Lucro Total (R$)", formatar_kpi(kpis["Lucro Total (R$)"]))
+        col3.metric("Estoque Atual (R$)", formatar_kpi(kpis["Estoque Atual (R$)"]))
 
-        saida_match = next(
-            (s for s in saidas if (s.get("Chassi") or s.get("Placa")) == chave_entrada),
-            None
-        )
+        exibir_tabela("📄 Resumo Mensal", df_resumo)
 
-        valor_entrada = pd.to_numeric(ent.get("Valor Total", 0), errors="coerce") or 0.0
-        valor_venda = pd.to_numeric(saida_match.get("Valor Total", 0), errors="coerce") if saida_match else 0.0
+    # === DOWNLOAD EXCEL ===
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        workbook = writer.book
+        real_fmt = workbook.add_format({"num_format": "R$ #,##0.00"})
+        pct_fmt = workbook.add_format({"num_format": "0.00%"})
+        text_fmt = workbook.add_format({"num_format": "@"})
+        int_fmt = workbook.add_format({"num_format": "0"})
 
-        item = {
-            "Produto": ent.get("Produto"),
-            "Chassi": ent.get("Chassi"),
-            "Placa": ent.get("Placa"),
-            "Data Entrada": ent.get("Data Emissão"),
-            "Valor Entrada": valor_entrada,
-            "Data Saída": saida_match.get("Data Emissão") if saida_match else "",
-            "Valor Venda": valor_venda,
-            "Lucro": valor_venda - valor_entrada if saida_match else 0.0,
-            "Situação": "Vendido" if saida_match else "Em Estoque"
+        abas = {
+            "Entradas": df_entrada,
+            "Saídas": df_saida,
+            "Estoque": df_estoque,
+            "Auditoria": df_alertas,
+            "Resumo": df_resumo,
         }
-        estoque.append(item)
 
-    return pd.DataFrame(estoque)
+        
+        for aba_nome, df in abas.items():
+            # Garantir que colunas monetárias estejam em formato float antes da formatação
+            for col in df.columns:
+                if any(key in col for key in formato.get("moeda", [])):
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                elif any(key in col for key in formato.get("percentual", [])):
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                elif col in formato.get("inteiro", []):
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+                elif "Data Emissão" in col or "Data Entrada" in col or "Data Saída" in col:
+                    df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime("%d/%m/%Y")
+    
+            df.to_excel(writer, sheet_name=aba_nome, index=False)
+            worksheet = writer.sheets[aba_nome]
+            for col_num, col_name in enumerate(df.columns):
+                if any(key in col_name for key in formato.get("moeda", [])):
+                    worksheet.set_column(col_num, col_num, 14, real_fmt)
+                elif any(key in col_name for key in formato.get("percentual", [])):
+                    worksheet.set_column(col_num, col_num, 12, pct_fmt)
+                elif any(key in col_name for key in formato.get("texto", [])):
+                    worksheet.set_column(col_num, col_num, 20, text_fmt)
+                elif col_name in formato.get("inteiro", []):
+                    worksheet.set_column(col_num, col_num, 10, int_fmt)
+                else:
+                    worksheet.set_column(col_num, col_num, 18)
 
-# === Auditoria ===
-def gerar_alertas_auditoria(df_entrada, df_saida):
-    df_entrada["Tipo Produto"] = df_entrada.apply(classificar_produto_linha, axis=1)
-    df_saida["Tipo Produto"] = df_saida.apply(classificar_produto_linha, axis=1)
-
-    df_entrada = df_entrada[df_entrada["Tipo Produto"] == "Veículo"]
-    df_saida = df_saida[df_saida["Tipo Produto"] == "Veículo"]
-
-    alertas = []
-
-    def obter_chave(df):
-        if "Chassi" in df.columns and "Placa" in df.columns:
-            return df["Chassi"].fillna(df["Placa"])
-        elif "Chassi" in df.columns:
-            return df["Chassi"]
-        elif "Placa" in df.columns:
-            return df["Placa"]
-        else:
-            return pd.Series([""] * len(df))
-
-    for tipo, df in [("Entrada", df_entrada), ("Saída", df_saida)]:
-        chave = obter_chave(df)
-        chave_validas = chave.notna()
-        try:
-            duplicados = df.loc[chave_validas].groupby(chave[chave_validas]).filter(lambda x: len(x) > 1)
-        except Exception:
-            continue
-
-        for _, grupo in duplicados.groupby(obter_chave(duplicados)):
-            chave_valor = grupo["Chassi"].iloc[0] if "Chassi" in grupo.columns and pd.notna(grupo["Chassi"].iloc[0]) else grupo["Placa"].iloc[0]
-            alertas.append({
-                "Tipo": tipo,
-                "Erro": "Duplicidade",
-                "Categoria": "Erro Crítico",
-                "Chassi/Placa": chave_valor,
-                "Notas": ", ".join(grupo["Nota Fiscal"].astype(str))
-            })
-
-    chaves_entrada = set(obter_chave(df_entrada).dropna().unique())
-    for _, s in df_saida.iterrows():
-        chave = s.get("Chassi") or s.get("Placa")
-        if chave and chave not in chaves_entrada:
-            alertas.append({
-                "Tipo": "Saída",
-                "Erro": "Saída sem entrada",
-                "Categoria": "Erro Crítico",
-                "Chassi/Placa": chave,
-                "Notas": s.get("Nota Fiscal")
-            })
-
-    chaves_saida = set(obter_chave(df_saida).dropna().unique())
-    for _, e in df_entrada.iterrows():
-        chave = e.get("Chassi") or e.get("Placa")
-        if chave and chave not in chaves_saida:
-            alertas.append({
-                "Tipo": "Entrada",
-                "Erro": "Entrada sem correspondente saída",
-                "Categoria": "Erro Informativo",
-                "Chassi/Placa": chave,
-                "Notas": e.get("Nota Fiscal")
-            })
-
-    return pd.DataFrame(alertas)
-
-# === KPIs ===
-def gerar_kpis(df_estoque):
-    vendidos = df_estoque[df_estoque["Situação"] == "Vendido"].copy()
-    em_estoque = df_estoque[df_estoque["Situação"] == "Em Estoque"].copy()
-
-    vendidos["Lucro"] = pd.to_numeric(vendidos["Lucro"], errors="coerce").fillna(0.0)
-    vendidos["Valor Venda"] = pd.to_numeric(vendidos["Valor Venda"], errors="coerce").fillna(0.0)
-    em_estoque["Valor Entrada"] = pd.to_numeric(em_estoque["Valor Entrada"], errors="coerce").fillna(0.0)
-
-    return {
-        "Total Vendido (R$)": vendidos["Valor Venda"].sum(),
-        "Total Comprado (R$)": df_estoque["Valor Entrada"].sum(),
-        "Lucro Total (R$)": vendidos["Lucro"].sum(),
-        "Estoque Atual (R$)": em_estoque["Valor Entrada"].sum(),
-        "Veículos Vendidos": len(vendidos),
-        "Veículos em Estoque": len(em_estoque)
-    }
-
-# === Resumo Mensal ===
-def gerar_resumo_mensal(df_estoque):
-    df = df_estoque.copy()
-    if "Data Entrada" not in df.columns:
-        return pd.DataFrame()
-
-    df["Mês"] = pd.to_datetime(df["Data Entrada"], errors='coerce').dt.to_period("M").astype(str)
-    resumo = df.groupby("Mês").agg({
-        "Valor Entrada": "sum",
-        "Valor Venda": "sum",
-        "Lucro": "sum",
-        "Produto": "count"
-    }).rename(columns={"Produto": "Qtd Entradas"}).reset_index()
-
-    return resumo
+    st.download_button(
+        label="📥 Baixar Relatório Completo",
+        data=output.getvalue(),
+        file_name="relatorio_completo_veiculos.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
