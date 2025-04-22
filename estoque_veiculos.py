@@ -1,5 +1,5 @@
 import pandas as pd
-import xml.etree.ElementTree as ET
+from lxml import etree
 import json
 import re
 import logging
@@ -39,26 +39,26 @@ def validar_placa(placa):
         re.fullmatch(VALIDADORES["placa_antiga"], placa)
     )
 
-# ===== Extração com iterfind =====
+# ===== Extração com lxml =====
 def extrair_dados_xml(xml_path):
     try:
         log.info(f"Processando XML: {xml_path}")
-        tree = ET.parse(xml_path)
+        tree = etree.parse(xml_path)
         root = tree.getroot()
 
         dados = {}
         for campo, paths in MAPA_CAMPOS.items():
             valor = None
             for path in paths:
-                elemento = next(root.iterfind(path), None)
-                if elemento is not None and elemento.text:
-                    valor = elemento.text.strip()
+                resultado = root.xpath(path)
+                if resultado and isinstance(resultado[0], etree._Element) and resultado[0].text:
+                    valor = resultado[0].text.strip()
                     break
             dados[campo] = valor
             if not valor and campo in CAMPOS_OBRIGATORIOS:
                 log.warning(f"Campo obrigatório '{campo}' não encontrado no XML.")
 
-        texto_xml = ET.tostring(root, encoding='unicode')
+        texto_xml = etree.tostring(root, encoding='unicode')
         for campo, padrao in REGEX_EXTRACAO.items():
             if not dados.get(campo):
                 match = re.search(padrao, texto_xml)
