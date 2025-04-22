@@ -26,25 +26,33 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     df_entrada = df_entrada.copy()
     df_saida = df_saida.copy()
 
-    # Criar chave de identificação
+    # Garantir colunas essenciais
     for col in ['Chassi', 'Placa']:
         if col not in df_entrada.columns:
             df_entrada[col] = ''
         if col not in df_saida.columns:
             df_saida[col] = ''
 
+    # Criar chave de identificação
     df_entrada['Chave'] = df_entrada['Chassi'].fillna('') + df_entrada['Placa'].fillna('')
     df_saida['Chave'] = df_saida['Chassi'].fillna('') + df_saida['Placa'].fillna('')
 
+    # Remover duplicados de saída para merge mais limpo
     df_saida = df_saida.drop_duplicates(subset='Chave')
+
+    # Merge
     df_estoque = pd.merge(df_entrada, df_saida, on='Chave', how='left', suffixes=('_entrada', '_saida'))
 
-    df_estoque['Situação'] = df_estoque['Data Saída'].notna().map({True: 'Vendido', False: 'Em Estoque'})
+    # Correção do acesso à coluna com sufixo
+    if 'Data Saída_saida' in df_estoque.columns:
+        df_estoque['Situação'] = df_estoque['Data Saída_saida'].notna().map({True: 'Vendido', False: 'Em Estoque'})
+    else:
+        df_estoque['Situação'] = 'Em Estoque'
 
-    # Calcular Lucro
-    df_estoque['Valor Entrada'] = pd.to_numeric(df_estoque.get('Valor Total_entrada'), errors='coerce')
-    df_estoque['Valor Venda'] = pd.to_numeric(df_estoque.get('Valor Total_saida'), errors='coerce')
-    df_estoque['Lucro'] = df_estoque['Valor Venda'].fillna(0) - df_estoque['Valor Entrada'].fillna(0)
+    # Calcular Lucro com segurança
+    df_estoque['Valor Entrada'] = pd.to_numeric(df_estoque.get('Valor Total_entrada'), errors='coerce').fillna(0)
+    df_estoque['Valor Venda'] = pd.to_numeric(df_estoque.get('Valor Total_saida'), errors='coerce').fillna(0)
+    df_estoque['Lucro'] = df_estoque['Valor Venda'] - df_estoque['Valor Entrada']
 
     return df_estoque
 
@@ -79,6 +87,6 @@ def gerar_kpis(df_estoque):
 
 def gerar_resumo_mensal(df_estoque):
     df = df_estoque[df_estoque['Situação'] == 'Vendido'].copy()
-    df['Mês'] = pd.to_datetime(df['Data Saída'], errors='coerce').dt.to_period("M").dt.start_time
+    df['Mês'] = pd.to_datetime(df['Data Saída_saida'], errors='coerce').dt.to_period("M").dt.start_time
     resumo = df.groupby('Mês').agg({'Valor Entrada': 'sum', 'Valor Venda': 'sum', 'Lucro': 'sum'}).reset_index()
     return resumo
