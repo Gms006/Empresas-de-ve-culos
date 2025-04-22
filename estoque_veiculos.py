@@ -29,7 +29,7 @@ CLIENTE_FINAL_REF = "cliente final"
 
 CAMPOS_OBRIGATORIOS = ['CFOP', 'Data Emissão', 'Valor Total']
 
-# ===== Funções de Validação =====
+# ===== Validações =====
 def validar_chassi(chassi):
     return bool(chassi) and re.fullmatch(VALIDADORES["chassi"], chassi)
 
@@ -39,25 +39,24 @@ def validar_placa(placa):
         re.fullmatch(VALIDADORES["placa_antiga"], placa)
     )
 
-# ===== Função de Extração com LOG =====
+# ===== Extração sem namespace =====
 def extrair_dados_xml(xml_path):
     try:
         log.info(f"Processando XML: {xml_path}")
         tree = ET.parse(xml_path)
         root = tree.getroot()
-        ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
 
         dados = {}
         for campo, paths in MAPA_CAMPOS.items():
             valor = None
             for path in paths:
-                elemento = root.find(path, ns) or root.find(path)
+                elemento = root.find(path)
                 if elemento is not None and elemento.text:
                     valor = elemento.text.strip()
                     break
             dados[campo] = valor
             if not valor and campo in CAMPOS_OBRIGATORIOS:
-                log.warning(f"Campo obrigatório '{campo}' não encontrado no XML: {xml_path}")
+                log.warning(f"Campo obrigatório '{campo}' não encontrado no XML.")
 
         texto_xml = ET.tostring(root, encoding='unicode')
         for campo, padrao in REGEX_EXTRACAO.items():
@@ -67,14 +66,14 @@ def extrair_dados_xml(xml_path):
                     dados[campo] = match.group(1)
 
         if not validar_chassi(dados.get("Chassi")):
-            log.warning(f"Chassi inválido no XML: {xml_path}")
+            log.warning(f"Chassi inválido.")
             dados["Chassi"] = None
         if not validar_placa(dados.get("Placa")):
-            log.warning(f"Placa inválida no XML: {xml_path}")
+            log.warning(f"Placa inválida.")
             dados["Placa"] = None
 
         if any(not dados.get(campo) for campo in CAMPOS_OBRIGATORIOS):
-            log.error(f"XML ignorado por falta de campos essenciais: {xml_path}")
+            log.error(f"XML ignorado por falta de campos essenciais.")
             return None
 
         return dados
@@ -82,7 +81,7 @@ def extrair_dados_xml(xml_path):
         log.error(f"Erro ao processar {xml_path}: {e}")
         return None
 
-# ===== Classificação com LOG =====
+# ===== Classificação =====
 def classificar_tipo_nota(row):
     tipo_nf = str(row.get('Tipo NF') or "").strip()
     if tipo_nf == "1":
@@ -99,22 +98,16 @@ def classificar_tipo_nota(row):
     cfop = str(row.get('CFOP') or "").strip()
 
     if emitente_cnpj in CNPJS_EMPRESA:
-        log.info(f"Classificado como Saída via Emitente CNPJ")
         return "Saída"
     if destinatario_cnpj in CNPJS_EMPRESA:
-        log.info(f"Classificado como Entrada via Destinatário CNPJ")
         return "Entrada"
     if any(nome in emitente_nome for nome in NOMES_EMPRESA):
-        log.info(f"Classificado como Saída via Nome Emitente")
         return "Saída"
     if any(nome in destinatario_nome for nome in NOMES_EMPRESA):
-        log.info(f"Classificado como Entrada via Nome Destinatário")
         return "Entrada"
     if cfop in CFOPS_SAIDA:
-        log.info(f"Classificado como Saída via CFOP")
         return "Saída"
     if CLIENTE_FINAL_REF in destinatario_nome:
-        log.info(f"Classificado como Saída via Cliente Final")
         return "Saída"
 
     log.warning(f"Classificação padrão aplicada: Entrada")
