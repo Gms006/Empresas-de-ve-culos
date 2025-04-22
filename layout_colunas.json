@@ -1,0 +1,15 @@
+{
+  "CFOP": {"tipo": "str", "ordem": 1},
+  "Data Emissão": {"tipo": "date", "ordem": 2},
+  "Valor Total": {"tipo": "float", "ordem": 3},
+  "Emitente Nome": {"tipo": "str", "ordem": 4},
+  "Destinatário Nome": {"tipo": "str", "ordem": 5},
+  "Chassi": {"tipo": "str", "ordem": 6},
+  "Placa": {"tipo": "str", "ordem": 7},
+  "Renavam": {"tipo": "str", "ordem": 8},
+  "KM": {"tipo": "int", "ordem": 9},
+  "Ano Modelo": {"tipo": "int", "ordem": 10},
+  "Ano Fabricação": {"tipo": "int", "ordem": 11},
+  "Cor": {"tipo": "str", "ordem": 12},
+  "Tipo Nota": {"tipo": "str", "ordem": 13}
+}
