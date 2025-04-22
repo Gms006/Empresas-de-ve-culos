@@ -20,4 +20,75 @@
     "Renavam": [
         "./infNFe/det/prod/veicProd/RENAVAM"
     ]
+  "Nota Fiscal": [
+    ".//nfe:ide/nfe:nNF",
+    ".//ide/nNF"
+  ],
+  "Série": [
+    ".//nfe:ide/nfe:serie",
+    ".//ide/serie"
+  ],
+  "Código Produto": [
+    ".//nfe:prod/nfe:cProd",
+    ".//prod/cProd"
+  ],
+  "Quantidade": [
+    ".//nfe:prod/nfe:qCom",
+    ".//prod/qCom"
+  ],
+  "Valor Unitário": [
+    ".//nfe:prod/nfe:vUnCom",
+    ".//prod/vUnCom"
+  ],
+  "Renavam": [
+    ".//nfe:RENAVAM",
+    ".//RENAVAM",
+    ".//infAdProd"
+  ],
+  "ICMS CST": [
+    ".//nfe:ICMS/nfe:CST",
+    ".//ICMS/CST"
+  ],
+  "ICMS CSOSN": [
+    ".//nfe:ICMS/nfe:CSOSN",
+    ".//ICMS/CSOSN"
+  ],
+  "ICMS Valor (R$)": [
+    ".//nfe:ICMS/nfe:vICMS",
+    ".//ICMS/vICMS"
+  ],
+  "ICMS Alíquota (%)": [
+    ".//nfe:ICMS/nfe:pICMS",
+    ".//ICMS/pICMS"
+  ],
+  "ICMS Base Cálculo": [
+    ".//nfe:ICMS/nfe:vBC",
+    ".//ICMS/vBC"
+  ],
+  "PIS Valor (R$)": [
+    ".//nfe:PIS/nfe:vPIS",
+    ".//PIS/vPIS"
+  ],
+  "PIS Alíquota (%)": [
+    ".//nfe:PIS/nfe:pPIS",
+    ".//PIS/pPIS"
+  ],
+  "COFINS Valor (R$)": [
+    ".//nfe:COFINS/nfe:vCOFINS",
+    ".//COFINS/vCOFINS"
+  ],
+  "COFINS Alíquota (%)": [
+    ".//nfe:COFINS/nfe:pCOFINS",
+    ".//COFINS/pCOFINS"
+  ],
+  "KM": [
+    ".//infAdProd"
+  ],
+  "Ano Modelo": [
+    ".//infAdProd"
+  ],
+  "Ano Fabricação": [
+    ".//infAdProd"
+  ]
 }
+
