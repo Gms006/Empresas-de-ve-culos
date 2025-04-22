@@ -9,9 +9,6 @@ with open('mapa_campos_extracao.json', encoding='utf-8') as f:
 with open('regex_extracao.json', encoding='utf-8') as f:
     REGEX_EXTRACAO = json.load(f)
 
-CAMPOS_OBRIGATORIOS = ['CFOP', 'Data Emissão', 'Destinatário Nome', 'Valor Total']
-CAMPOS_COMPLEMENTARES = ['Chassi', 'Placa']
-
 def extrair_dados_xml(xml_path):
     try:
         tree = ET.parse(xml_path)
@@ -19,15 +16,26 @@ def extrair_dados_xml(xml_path):
         ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
 
         dados = {}
-        for campo, path in MAPA_CAMPOS.items():
-            elemento = root.find(path, ns) or root.find(path)
-            dados[campo] = elemento.text if elemento is not None and elemento.text else None
 
+        # Iterar sobre lista de paths e pegar o primeiro valor encontrado
+        for campo, paths in MAPA_CAMPOS.items():
+            if isinstance(paths, str):
+                paths = [paths]
+            valor = None
+            for path in paths:
+                elemento = root.find(path, ns) or root.find(path)
+                if elemento is not None and elemento.text:
+                    valor = elemento.text
+                    break
+            dados[campo] = valor
+
+        # Aplicar regex apenas se o campo ainda estiver vazio
         texto_xml = ET.tostring(root, encoding='unicode')
         for campo, padrao in REGEX_EXTRACAO.items():
-            match = re.search(padrao, texto_xml)
-            if match:
-                dados[campo] = match.group(1)
+            if not dados.get(campo):
+                match = re.search(padrao, texto_xml)
+                if match:
+                    dados[campo] = match.group(1)
 
         return dados
     except Exception:
@@ -37,7 +45,8 @@ def processar_arquivos_xml(xml_paths):
     registros = [extrair_dados_xml(path) for path in xml_paths if path.endswith(".xml")]
     df = pd.DataFrame(filter(None, registros))
 
-    for col in CAMPOS_OBRIGATORIOS + CAMPOS_COMPLEMENTARES:
+    # Garantir que todas as colunas do JSON estejam no DataFrame
+    for col in MAPA_CAMPOS.keys():
         if col not in df.columns:
             df[col] = None
 
