@@ -3,19 +3,11 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 import json
 import re
-import os
 
-# Carregar configurações
 with open('mapa_campos_extracao.json', encoding='utf-8') as f:
     MAPA_CAMPOS = json.load(f)
 with open('regex_extracao.json', encoding='utf-8') as f:
     REGEX_EXTRACAO = json.load(f)
-with open('ordem_colunas.json', encoding='utf-8') as f:
-    ORDEM_COLUNAS = json.load(f)
-with open('formato_colunas.json', encoding='utf-8') as f:
-    FORMATO_COLUNAS = json.load(f)
-with open('classificacao_produto.json', encoding='utf-8') as f:
-    CLASSIFICACAO_PRODUTO = json.load(f)
 
 def extrair_dados_xml(xml_path):
     tree = ET.parse(xml_path)
@@ -27,7 +19,6 @@ def extrair_dados_xml(xml_path):
         elemento = root.find(path, ns)
         dados[campo] = elemento.text if elemento is not None else None
 
-    # Aplicar regex adicionais (ex: Chassi, Placa)
     for campo, padrao in REGEX_EXTRACAO.items():
         texto = ET.tostring(root, encoding='unicode')
         match = re.search(padrao, texto)
@@ -47,21 +38,27 @@ def processar_arquivos_xml(xml_paths):
 
     df = pd.DataFrame(registros)
 
-    # Garantir colunas essenciais
     colunas_obrigatorias = ['Chassi', 'Placa', 'CFOP', 'Data Emissão', 'Destinatário Nome', 'Valor Total', 'Produto', 'Valor Entrada']
     for col in colunas_obrigatorias:
         if col not in df.columns:
             df[col] = None
 
-    # Classificação de Entrada/Saída
-    cfops_saida = ["5101", "6101"]
-    cliente_final = "Cliente Final"
-    df['Tipo Nota'] = df.apply(lambda row: "Saída" if str(row['CFOP']) in cfops_saida or row['Destinatário Nome'] == cliente_final else "Entrada", axis=1)
+    # Ampliar CFOPs de saída
+    cfops_saida = ["5101", "5102", "5103", "5949", "6101", "6102", "6108", "6949"]
+    cliente_final_ref = "cliente final"
+
+    def classificar_nota(row):
+        cfop = str(row['CFOP']).strip()
+        destinatario = str(row['Destinatário Nome']).lower()
+        if cfop in cfops_saida or cliente_final_ref in destinatario:
+            return "Saída"
+        return "Entrada"
+
+    df['Tipo Nota'] = df.apply(classificar_nota, axis=1)
 
     df_entrada = df[df['Tipo Nota'] == "Entrada"].copy()
     df_saida = df[df['Tipo Nota'] == "Saída"].copy()
 
-    # Datas
     df_entrada['Data Entrada'] = pd.to_datetime(df_entrada['Data Emissão'], errors='coerce')
     df_saida['Data Saída'] = pd.to_datetime(df_saida['Data Emissão'], errors='coerce')
 
