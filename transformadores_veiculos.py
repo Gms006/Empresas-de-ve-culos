@@ -12,8 +12,8 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     df_estoque = pd.merge(df_entrada, df_saida, on='Chave', how='left', suffixes=('_entrada', '_saida'))
 
     col_saida = 'Data Saída_saida'
-col_alvo = col_saida if col_saida in df_estoque.columns else 'Data Saída'
-df_estoque['Situação'] = df_estoque[col_alvo].notna().map({True: 'Vendido', False: 'Em Estoque'})
+    col_alvo = col_saida if col_saida in df_estoque.columns else 'Data Saída'
+    df_estoque['Situação'] = df_estoque[col_alvo].notna().map({True: 'Vendido', False: 'Em Estoque'})
     df_estoque['Lucro'] = df_estoque['Valor Venda'].astype(float) - df_estoque['Valor Entrada'].astype(float)
 
     df_estoque.rename(columns={
