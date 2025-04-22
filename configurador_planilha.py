@@ -1,16 +1,16 @@
 import pandas as pd
 import json
 
-with open('formato_colunas.json', encoding='utf-8') as f:
-    FORMATO_COLUNAS = json.load(f)
-
-with open('ordem_colunas.json', encoding='utf-8') as f:
-    ORDEM_COLUNAS = json.load(f)
+with open('layout_colunas.json', encoding='utf-8') as f:
+    LAYOUT_COLUNAS = json.load(f)
 
 def configurar_planilha(df):
+    df = df.copy()
+
     # Aplicar tipos
-    for col, tipo in FORMATO_COLUNAS.items():
+    for col, props in LAYOUT_COLUNAS.items():
         if col in df.columns:
+            tipo = props["tipo"]
             if tipo == "float":
                 df[col] = pd.to_numeric(df[col], errors='coerce')
             elif tipo == "int":
@@ -20,8 +20,10 @@ def configurar_planilha(df):
             else:
                 df[col] = df[col].astype(str)
 
-    # Reordenar colunas
-    colunas_ordenadas = [col for col in ORDEM_COLUNAS if col in df.columns]
-    df = df[colunas_ordenadas]
+    # Reordenar mantendo colunas adicionais
+    ordem = sorted(LAYOUT_COLUNAS.items(), key=lambda x: x[1]["ordem"])
+    colunas_ordenadas = [col for col, _ in ordem if col in df.columns]
+    colunas_restantes = [col for col in df.columns if col not in colunas_ordenadas]
 
+    df = df[colunas_ordenadas + colunas_restantes]
     return df
