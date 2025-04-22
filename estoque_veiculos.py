@@ -1,70 +1,56 @@
 
 import pandas as pd
-import xml.etree.ElementTree as ET
-import json
+from lxml import etree
 import re
+from collections import Counter
 
-# Carregar JSONs
-with open('mapa_campos_extracao.json', encoding='utf-8') as f:
-    MAPA_CAMPOS = json.load(f)
-with open('regex_extracao.json', encoding='utf-8') as f:
-    REGEX_EXTRACAO = json.load(f)
+# JSON embutido no script
+MAPA_CAMPOS = {
+    "essenciais": {
+        "CFOP": ["//*[local-name()='CFOP']"],
+        "Data Emissão": ["//*[local-name()='dhEmi']"],
+        "Destinatário Nome": ["//*[local-name()='dest']/*[local-name()='xNome']"],
+        "Valor Total": ["//*[local-name()='vNF']"]
+    },
+    "complementares": {
+        "Chassi": ["//*[local-name()='chassi']"],
+        "Placa": ["//*[local-name()='placa']"],
+        "Renavam": ["//*[local-name()='RENAVAM']"]
+    }
+}
 
-# Definir campos essenciais e complementares
-CAMPOS_ESSENCIAIS = ['CFOP', 'Data Emissão', 'Destinatário Nome', 'Valor Total']
-CAMPOS_COMPLEMENTARES = ['Chassi', 'Placa', 'Renavam']
+def extrair_valor_xpath(tree, paths):
+    for path in paths:
+        resultado = tree.xpath(path)
+        if resultado and isinstance(resultado[0], etree._Element):
+            return resultado[0].text
+        elif resultado:
+            return resultado[0]
+    return None
 
 def extrair_dados_xml(xml_path, log_erros):
     try:
-        tree = ET.parse(xml_path)
-        root = tree.getroot()
-        ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
+        with open(xml_path, 'rb') as f:
+            tree = etree.parse(f)
 
         dados = {}
 
         # 1️⃣ Extrair Campos Essenciais
-        for campo in CAMPOS_ESSENCIAIS:
-            paths = MAPA_CAMPOS.get(campo, [])
-            if isinstance(paths, str):
-                paths = [paths]
-            valor = None
-            for path in paths:
-                elemento = root.find(path, ns) or root.find(path)
-                if elemento is not None and elemento.text:
-                    valor = elemento.text
-                    break
+        for campo, paths in MAPA_CAMPOS['essenciais'].items():
+            valor = extrair_valor_xpath(tree, paths)
             dados[campo] = valor
 
-        # Validar se os dados essenciais foram encontrados
         if not dados['CFOP'] or not dados['Data Emissão'] or not dados['Valor Total']:
             log_erros['Notas inválidas - dados fiscais ausentes'] += 1
             return None
 
-        # 2️⃣ Detectar se é Nota de Veículo
-        produto_desc = str(dados.get('Produto', '')).lower()
+        # 2️⃣ Verificar se é Veículo
         cfop = str(dados.get('CFOP', ''))
-        is_veiculo = 'veiculo' in produto_desc or cfop.startswith('5')
+        is_veiculo = cfop.startswith('5')
 
         if is_veiculo:
-            # 3️⃣ Buscar Campos Complementares
-            for campo in CAMPOS_COMPLEMENTARES:
-                paths = MAPA_CAMPOS.get(campo, [])
-                if isinstance(paths, str):
-                    paths = [paths]
-                valor = None
-                for path in paths:
-                    elemento = root.find(path, ns) or root.find(path)
-                    if elemento is not None and elemento.text:
-                        valor = elemento.text
-                        break
-                if not valor:
-                    # Aplicar regex como fallback
-                    texto_xml = ET.tostring(root, encoding='unicode')
-                    padrao = REGEX_EXTRACAO.get(campo)
-                    if padrao:
-                        match = re.search(padrao, texto_xml)
-                        if match:
-                            valor = match.group(1)
+            for campo, paths in MAPA_CAMPOS['complementares'].items():
+                valor = extrair_valor_xpath(tree, paths)
                 if not valor:
                     log_erros[f'{campo} ausente'] += 1
                 dados[campo] = valor
@@ -72,25 +58,22 @@ def extrair_dados_xml(xml_path, log_erros):
             log_erros['Notas comuns (não veículo)'] += 1
 
         return dados
-    except Exception:
+    except Exception as e:
         log_erros['Erros críticos de parsing'] += 1
         return None
 
 def processar_arquivos_xml(xml_paths):
-    from collections import Counter
     log_erros = Counter()
-
     registros = [extrair_dados_xml(path, log_erros) for path in xml_paths if path.endswith(".xml")]
     registros_validos = list(filter(None, registros))
 
     df = pd.DataFrame(registros_validos)
 
-    # Garantir todas as colunas presentes
-    for col in CAMPOS_ESSENCIAIS + CAMPOS_COMPLEMENTARES:
+    todas_colunas = list(MAPA_CAMPOS['essenciais'].keys()) + list(MAPA_CAMPOS['complementares'].keys())
+    for col in todas_colunas:
         if col not in df.columns:
             df[col] = None
 
-    # Classificação
     cfops_saida = ["5101", "5102", "5103", "5949", "6101", "6102", "6108", "6949"]
     cliente_final_ref = "cliente final"
 
@@ -102,7 +85,6 @@ def processar_arquivos_xml(xml_paths):
     else:
         df['Tipo Nota'] = None
 
-    # Logs Resumidos
     print(f"📊 RESUMO FINAL")
     print(f"- XMLs processados: {len(xml_paths)}")
     print(f"- Notas válidas: {len(registros_validos)}")
