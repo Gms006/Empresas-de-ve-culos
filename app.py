@@ -106,26 +106,39 @@ if uploaded_files:
 
         # Exportar para Excel com formatação
         output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df_estoque.to_excel(writer, sheet_name="Estoque", index=False)
-            df_alertas.to_excel(writer, sheet_name="Auditoria", index=False)
-            df_resumo.to_excel(writer, sheet_name="Resumo", index=False)
+# Exportar todas as planilhas com formatação
+        output_all = io.BytesIO()
+        with pd.ExcelWriter(output_all, engine='xlsxwriter') as writer:
+            abas = {
+                "Entradas": formatar_df_exibicao(df_entrada),
+                "Saídas": formatar_df_exibicao(df_saida),
+                "Estoque": formatar_df_exibicao(df_estoque),
+                "Auditoria": formatar_df_exibicao(df_alertas),
+                "Resumo": formatar_df_exibicao(df_resumo)
+            }
 
             workbook = writer.book
             real_fmt = workbook.add_format({"num_format": "R$ #,##0.00"})
             pct_fmt = workbook.add_format({"num_format": "0.00%"})
             text_fmt = workbook.add_format({"num_format": "@"})
+            int_fmt = workbook.add_format({"num_format": "0"})
 
-            for sheet in ["Estoque", "Auditoria", "Resumo"]:
-                worksheet = writer.sheets[sheet]
-                for col_num, col_name in enumerate(df_estoque.columns):
-                    if "R$" in col_name or "Valor" in col_name or "Total" in col_name or "Lucro" in col_name:
+            with open("formato_colunas.json", "r", encoding="utf-8") as f:
+                formato = json.load(f)
+
+            for aba, df in abas.items():
+                df.to_excel(writer, sheet_name=aba, index=False)
+                worksheet = writer.sheets[aba]
+                for col_num, col_name in enumerate(df.columns):
+                    if any(key in col_name for key in formato.get("moeda", [])):
                         worksheet.set_column(col_num, col_num, 14, real_fmt)
-                    elif "Alíquota" in col_name:
+                    elif any(key in col_name for key in formato.get("percentual", [])):
                         worksheet.set_column(col_num, col_num, 12, pct_fmt)
-                    elif "CNPJ" in col_name:
+                    elif any(key in col_name for key in formato.get("texto", [])):
                         worksheet.set_column(col_num, col_num, 20, text_fmt)
+                    elif col_name in formato.get("inteiro", []):
+                        worksheet.set_column(col_num, col_num, 10, int_fmt)
                     else:
                         worksheet.set_column(col_num, col_num, 18)
 
-        st.download_button("📥 Baixar Planilha Completa", data=output.getvalue(), file_name="relatorio_veiculos.xlsx")
+        st.download_button("📥 Baixar Relatório Completo", data=output_all.getvalue(), file_name="relatorio_completo_veiculos.xlsx")
