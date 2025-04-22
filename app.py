@@ -1,4 +1,5 @@
-# app.py - Painel Streamlit para Estoque de Veículos
+
+# app_corrigido.py - Painel Streamlit para Estoque de Veículos com melhorias
 
 import zipfile
 import pandas as pd
@@ -6,14 +7,12 @@ import streamlit as st
 import tempfile
 import os
 import io
-from estoque_veiculos import processar_arquivos_xml
-from transformadores_veiculos import gerar_estoque_fiscal, gerar_alertas_auditoria, gerar_kpis, gerar_resumo_mensal
-
-# === FORMATADORES DE VISUALIZAÇÃO ===
-
-# === FORMATADORES COM JSON ===
 import json
 
+from estoque_veiculos import processar_arquivos_xml
+from transformadores_veiculos_corrigido import gerar_estoque_fiscal, gerar_alertas_auditoria, gerar_kpis, gerar_resumo_mensal
+
+# === FORMATADORES COM JSON ===
 with open("formato_colunas.json", "r", encoding="utf-8") as f:
     formato = json.load(f)
 with open("ordem_colunas.json", "r", encoding="utf-8") as f:
@@ -57,7 +56,6 @@ st.markdown("""
 Este painel permite o upload de arquivos XML (ou ZIP com XMLs), extração automática de dados e análise fiscal/comercial de veículos.
 """)
 
-# Upload dos arquivos
 uploaded_files = st.file_uploader("Envie arquivos XML ou ZIP com XMLs", type=["xml", "zip"], accept_multiple_files=True)
 
 if uploaded_files:
@@ -80,7 +78,21 @@ if uploaded_files:
                     xml_paths.append(filepath)
 
             df_entrada, df_saida = processar_arquivos_xml(xml_paths)
+
+            if df_entrada.empty and df_saida.empty:
+                st.warning("⚠️ Nenhum dado encontrado nos arquivos XML.")
+                st.stop()
+
+            if "Tipo Produto" not in df_entrada.columns or "Tipo Produto" not in df_saida.columns:
+                st.error("❌ Estrutura inválida. Verifique se os XMLs são de veículos.")
+                st.stop()
+
             df_estoque = gerar_estoque_fiscal(df_entrada, df_saida)
+
+            if df_estoque.empty:
+                st.warning("⚠️ Nenhum veículo encontrado nos XMLs enviados.")
+                st.stop()
+
             df_alertas = gerar_alertas_auditoria(df_entrada, df_saida)
             kpis = gerar_kpis(df_estoque)
             df_resumo = gerar_resumo_mensal(df_estoque)
@@ -104,29 +116,28 @@ if uploaded_files:
         col2.metric("Lucro Total (R$)", f"R$ {kpis['Lucro Total (R$)']:,.2f}")
         col3.metric("Estoque Atual (R$)", f"R$ {kpis['Estoque Atual (R$)']:,.2f}")
 
-        # Exportar para Excel com formatação
-        output = io.BytesIO()
-# Exportar todas as planilhas com formatação
-        output_all = io.BytesIO()
-        with pd.ExcelWriter(output_all, engine='xlsxwriter') as writer:
-            abas = {
-                "Entradas": formatar_df_exibicao(df_entrada),
-                "Saídas": formatar_df_exibicao(df_saida),
-                "Estoque": formatar_df_exibicao(df_estoque),
-                "Auditoria": formatar_df_exibicao(df_alertas),
-                "Resumo": formatar_df_exibicao(df_resumo)
-            }
+        st.subheader("📄 Resumo Mensal")
+        st.dataframe(formatar_df_exibicao(df_resumo), use_container_width=True)
 
-            workbook = writer.book
-            real_fmt = workbook.add_format({"num_format": "R$ #,##0.00"})
-            pct_fmt = workbook.add_format({"num_format": "0.00%"})
-            text_fmt = workbook.add_format({"num_format": "@"})
-            int_fmt = workbook.add_format({"num_format": "0"})
+    # Exportação
+    output_all = io.BytesIO()
+    with pd.ExcelWriter(output_all, engine='xlsxwriter') as writer:
+        abas = {
+            "Entradas": formatar_df_exibicao(df_entrada),
+            "Saídas": formatar_df_exibicao(df_saida),
+            "Estoque": formatar_df_exibicao(df_estoque),
+            "Auditoria": formatar_df_exibicao(df_alertas),
+            "Resumo": formatar_df_exibicao(df_resumo)
+        }
 
-            with open("formato_colunas.json", "r", encoding="utf-8") as f:
-                formato = json.load(f)
+        workbook = writer.book
+        real_fmt = workbook.add_format({"num_format": "R$ #,##0.00"})
+        pct_fmt = workbook.add_format({"num_format": "0.00%"})
+        text_fmt = workbook.add_format({"num_format": "@"})
+        int_fmt = workbook.add_format({"num_format": "0"})
 
-            for aba, df in abas.items():
+        for aba, df in abas.items():
+            try:
                 df.to_excel(writer, sheet_name=aba, index=False)
                 worksheet = writer.sheets[aba]
                 for col_num, col_name in enumerate(df.columns):
@@ -140,5 +151,7 @@ if uploaded_files:
                         worksheet.set_column(col_num, col_num, 10, int_fmt)
                     else:
                         worksheet.set_column(col_num, col_num, 18)
+            except Exception as e:
+                st.error(f"Erro ao exportar aba '{aba}': {e}")
 
-        st.download_button("📥 Baixar Relatório Completo", data=output_all.getvalue(), file_name="relatorio_completo_veiculos.xlsx")
+    st.download_button("📥 Baixar Relatório Completo", data=output_all.getvalue(), file_name="relatorio_completo_veiculos.xlsx")
