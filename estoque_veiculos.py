@@ -39,7 +39,7 @@ def validar_placa(placa):
         re.fullmatch(VALIDADORES["placa_antiga"], placa)
     )
 
-# ===== Extração Corrigida =====
+# ===== Extração com iterfind =====
 def extrair_dados_xml(xml_path):
     try:
         log.info(f"Processando XML: {xml_path}")
@@ -50,7 +50,7 @@ def extrair_dados_xml(xml_path):
         for campo, paths in MAPA_CAMPOS.items():
             valor = None
             for path in paths:
-                elemento = next(root.findall(path), None)
+                elemento = next(root.iterfind(path), None)
                 if elemento is not None and elemento.text:
                     valor = elemento.text.strip()
                     break
