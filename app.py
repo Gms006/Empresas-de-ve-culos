@@ -40,6 +40,11 @@ if uploaded_files:
 
             df_entrada, df_saida = processar_arquivos_xml(xml_paths)
             df_estoque = gerar_estoque_fiscal(df_entrada, df_saida)
+
+            if df_estoque.empty or "Situação" not in df_estoque.columns:
+                st.warning("⚠️ Nenhum veículo identificado nos arquivos XML enviados.")
+                st.stop()
+
             df_alertas = gerar_alertas_auditoria(df_entrada, df_saida)
             kpis = gerar_kpis(df_estoque)
             df_resumo = gerar_resumo_mensal(df_estoque)
