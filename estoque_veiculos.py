@@ -43,7 +43,7 @@ def processar_arquivos_xml(xml_paths):
         if col not in df.columns:
             df[col] = None
 
-    # Ampliar CFOPs de saída
+    # Classificação
     cfops_saida = ["5101", "5102", "5103", "5949", "6101", "6102", "6108", "6949"]
     cliente_final_ref = "cliente final"
 
@@ -56,10 +56,10 @@ def processar_arquivos_xml(xml_paths):
 
     df['Tipo Nota'] = df.apply(classificar_nota, axis=1)
 
+    df['Data Entrada'] = pd.to_datetime(df['Data Emissão'], errors='coerce')
+    df['Data Saída'] = df.apply(lambda row: row['Data Entrada'] if row['Tipo Nota'] == "Saída" else pd.NaT, axis=1)
+
     df_entrada = df[df['Tipo Nota'] == "Entrada"].copy()
     df_saida = df[df['Tipo Nota'] == "Saída"].copy()
-
-    df_entrada['Data Entrada'] = pd.to_datetime(df_entrada['Data Emissão'], errors='coerce')
-    df_saida['Data Saída'] = pd.to_datetime(df_saida['Data Emissão'], errors='coerce')
 
     return df_entrada, df_saida
