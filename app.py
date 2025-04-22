@@ -33,44 +33,48 @@ if uploaded_files:
         df_bruto = processar_xmls(xml_paths)
         df_configurado = configurar_planilha(df_bruto)
 
-        df_entrada = df_configurado[df_configurado['Tipo Nota'] == 'Entrada'].copy()
-        df_saida = df_configurado[df_configurado['Tipo Nota'] == 'Saída'].copy()
+        # 🚨 Proteção contra DataFrame vazio ou ausência da coluna 'Tipo Nota'
+        if not df_configurado.empty and 'Tipo Nota' in df_configurado.columns:
+            df_entrada = df_configurado[df_configurado['Tipo Nota'] == 'Entrada'].copy()
+            df_saida = df_configurado[df_configurado['Tipo Nota'] == 'Saída'].copy()
 
-        df_estoque = gerar_estoque_fiscal(df_entrada, df_saida)
+            df_estoque = gerar_estoque_fiscal(df_entrada, df_saida)
 
-        st.sidebar.header("🔎 Diagnóstico de Processamento")
-        st.sidebar.write(f"**Total de Notas Processadas:** {len(df_configurado)}")
-        st.sidebar.write(f"**Notas de Entrada:** {len(df_entrada)}")
-        st.sidebar.write(f"**Notas de Saída:** {len(df_saida)}")
-        st.sidebar.write(f"**Veículos Vendidos:** {df_estoque[df_estoque['Situação'] == 'Vendido'].shape[0]}")
+            st.sidebar.header("🔎 Diagnóstico de Processamento")
+            st.sidebar.write(f"**Total de Notas Processadas:** {len(df_configurado)}")
+            st.sidebar.write(f"**Notas de Entrada:** {len(df_entrada)}")
+            st.sidebar.write(f"**Notas de Saída:** {len(df_saida)}")
+            st.sidebar.write(f"**Veículos Vendidos:** {df_estoque[df_estoque['Situação'] == 'Vendido'].shape[0]}")
 
-        if df_saida.empty:
-            st.warning("⚠️ Nenhuma nota de saída detectada. Verifique a classificação de CFOPs e destinatário.")
+            if df_saida.empty:
+                st.warning("⚠️ Nenhuma nota de saída detectada. Verifique a classificação de CFOPs e destinatário.")
 
-        aba = st.tabs(["📦 Estoque", "🕵️ Auditoria", "📈 KPIs e Resumo", "🧾 Apuração Fiscal"])
+            aba = st.tabs(["📦 Estoque", "🕵️ Auditoria", "📈 KPIs e Resumo", "🧾 Apuração Fiscal"])
 
-        with aba[0]:
-            st.subheader("📦 Estoque Fiscal")
-            st.dataframe(df_estoque)
+            with aba[0]:
+                st.subheader("📦 Estoque Fiscal")
+                st.dataframe(df_estoque)
 
-        with aba[1]:
-            st.subheader("🕵️ Relatório de Auditoria")
-            df_alertas = gerar_alertas_auditoria(df_entrada, df_saida)
-            st.dataframe(df_alertas)
+            with aba[1]:
+                st.subheader("🕵️ Relatório de Auditoria")
+                df_alertas = gerar_alertas_auditoria(df_entrada, df_saida)
+                st.dataframe(df_alertas)
 
-        with aba[2]:
-            st.subheader("📊 KPIs")
-            kpis = gerar_kpis(df_estoque)
-            st.json(kpis)
+            with aba[2]:
+                st.subheader("📊 KPIs")
+                kpis = gerar_kpis(df_estoque)
+                st.json(kpis)
 
-            st.subheader("📅 Resumo Mensal")
-            df_resumo = gerar_resumo_mensal(df_estoque)
-            st.dataframe(df_resumo)
+                st.subheader("📅 Resumo Mensal")
+                df_resumo = gerar_resumo_mensal(df_estoque)
+                st.dataframe(df_resumo)
 
-        with aba[3]:
-            st.subheader("🧾 Apuração Fiscal")
-            df_apuracao, _ = calcular_apuracao(df_estoque)
-            if df_apuracao.empty:
-                st.info("ℹ️ Nenhuma venda registrada para apuração.")
-            else:
-                st.dataframe(df_apuracao)
+            with aba[3]:
+                st.subheader("🧾 Apuração Fiscal")
+                df_apuracao, _ = calcular_apuracao(df_estoque)
+                if df_apuracao.empty:
+                    st.info("ℹ️ Nenhuma venda registrada para apuração.")
+                else:
+                    st.dataframe(df_apuracao)
+        else:
+            st.warning("⚠️ Nenhum dado processado ou coluna 'Tipo Nota' ausente. Verifique os XMLs enviados.")
