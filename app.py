@@ -28,6 +28,9 @@ def formatar_df_exibicao(df):
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
     return df
 
+def formatar_kpi(valor):
+    return "R$ {:,.2f}".format(valor).replace(",", "X").replace(".", ",").replace("X", ".")
+
 # === CONFIGURAÇÕES INICIAIS ===
 st.set_page_config(page_title="Painel de Veículos", layout="wide")
 st.title("📦 Painel Fiscal - Veículos")
@@ -85,9 +88,9 @@ if uploaded_files:
     elif aba == "📈 KPIs e Resumo":
         st.subheader("📊 Indicadores de Desempenho")
         col1, col2, col3 = st.columns(3)
-        col1.metric("Total Vendido (R$)", f"R$ {kpis['Total Vendido (R$)']:,.2f}")
-        col2.metric("Lucro Total (R$)", f"R$ {kpis['Lucro Total (R$)']:,.2f}")
-        col3.metric("Estoque Atual (R$)", f"R$ {kpis['Estoque Atual (R$)']:,.2f}")
+        col1.metric("Total Vendido (R$)", formatar_kpi(kpis["Total Vendido (R$)"]))
+        col2.metric("Lucro Total (R$)", formatar_kpi(kpis["Lucro Total (R$)"]))
+        col3.metric("Estoque Atual (R$)", formatar_kpi(kpis["Estoque Atual (R$)"]))
 
         exibir_tabela("📄 Resumo Mensal", df_resumo)
 
