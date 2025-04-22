@@ -10,33 +10,41 @@ with open('regex_extracao.json', encoding='utf-8') as f:
     REGEX_EXTRACAO = json.load(f)
 
 def extrair_dados_xml(xml_path):
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-    ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
 
-    dados = {}
-    for campo, path in MAPA_CAMPOS.items():
-        elemento = root.find(path, ns)
-        dados[campo] = elemento.text if elemento is not None else None
+        dados = {}
+        for campo, path in MAPA_CAMPOS.items():
+            try:
+                elemento = root.find(path, ns)
+                dados[campo] = elemento.text if elemento is not None else None
+            except:
+                dados[campo] = None  # Campo não encontrado
 
-    for campo, padrao in REGEX_EXTRACAO.items():
-        texto = ET.tostring(root, encoding='unicode')
-        match = re.search(padrao, texto)
-        dados[campo] = match.group(1) if match else None
+        texto_xml = ET.tostring(root, encoding='unicode')
+        for campo, padrao in REGEX_EXTRACAO.items():
+            match = re.search(padrao, texto_xml)
+            dados[campo] = match.group(1) if match else None
 
-    return dados
+        return dados
+    except Exception as e:
+        print(f"Erro ao processar {xml_path}: {e}")
+        return None
 
 def processar_arquivos_xml(xml_paths):
     registros = []
     for path in xml_paths:
         if path.endswith(".xml"):
-            try:
-                registro = extrair_dados_xml(path)
+            registro = extrair_dados_xml(path)
+            if registro:
                 registros.append(registro)
-            except:
-                continue
 
     df = pd.DataFrame(registros)
+
+    if df.empty:
+        print("⚠️ Nenhum dado extraído dos XMLs. Verifique o mapa de campos e as regex.")
 
     colunas_obrigatorias = ['Chassi', 'Placa', 'CFOP', 'Data Emissão', 'Destinatário Nome', 'Valor Total', 'Produto', 'Valor Entrada']
     for col in colunas_obrigatorias:
@@ -47,8 +55,8 @@ def processar_arquivos_xml(xml_paths):
     cliente_final_ref = "cliente final"
 
     def classificar_nota(row):
-        cfop = str(row['CFOP']).strip()
-        destinatario = str(row['Destinatário Nome']).lower()
+        cfop = str(row['CFOP']).strip() if row['CFOP'] else ""
+        destinatario = str(row['Destinatário Nome']).lower() if row['Destinatário Nome'] else ""
         if cfop in cfops_saida or cliente_final_ref in destinatario:
             return "Saída"
         return "Entrada"
