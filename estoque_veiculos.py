@@ -1,4 +1,3 @@
-
 import os
 import re
 import json
@@ -79,7 +78,7 @@ def processar_arquivos_xml(lista_de_caminhos):
                 imposto = det.find("ns:imposto", ns)
                 infAdProd = det.find("ns:infAdProd", ns)
 
-                # Extração padrão pelo mapa
+                # Extração padrão
                 for secao, campos in mapa.items():
                     if secao == "ide":
                         contexto = ide
@@ -97,16 +96,14 @@ def processar_arquivos_xml(lista_de_caminhos):
                             valor = obter_valor(ns, xml_tag, contexto)
                             linha[nome_coluna] = aplicar_tipo(valor, nome_coluna, formato)
 
-                # Extração adicional com regex sobre xProd e infAdProd
+                # Extração adicional por regex
                 xProd_texto = obter_valor(ns, "xProd", prod)
                 adProd_texto = infAdProd.text if infAdProd is not None else ""
                 texto_completo = f"{xProd_texto} {adProd_texto}".strip()
-
                 campos_extras = aplicar_regex_extracao(texto_completo)
 
-                                
-        for campo, valor in campos_extras.items():
-
+                # Aplicar campos extras
+                for campo, valor in campos_extras.items():
                     nome_coluna = {
                         "chassi": "Chassi",
                         "placa": "Placa",
@@ -118,7 +115,7 @@ def processar_arquivos_xml(lista_de_caminhos):
                     }.get(campo, campo)
                     linha[nome_coluna] = aplicar_tipo(valor, nome_coluna, formato)
 
-                # Determinação de entrada/saída
+                # Determinação do tipo da nota
                 cfop = obter_valor(ns, "CFOP", prod)
                 nome_destinatario = obter_valor(ns, "xNome", dest).upper()
                 tipo = "Entrada" if cfop.startswith("1") or cfop.startswith("2") else (
