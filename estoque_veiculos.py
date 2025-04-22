@@ -1,5 +1,5 @@
 import pandas as pd
-from lxml import etree
+import xml.etree.ElementTree as ET
 import json
 import re
 import logging
@@ -15,24 +15,14 @@ with open('mapa_campos_extracao.json', encoding='utf-8') as f:
 with open('regex_extracao.json', encoding='utf-8') as f:
     REGEX_EXTRACAO = json.load(f)
 
-with open('empresas_config.json', encoding='utf-8') as f:
-    CONFIG_EMPRESA = json.load(f)['bda']
-
 with open('validador_veiculo.json', encoding='utf-8') as f:
     VALIDADORES = json.load(f)
 
-with open('ordem_colunas.json', encoding='utf-8') as f:
-    ORDEM_COLUNAS = json.load(f)['ordem_preferida']
-
-CNPJS_EMPRESA = CONFIG_EMPRESA['cnpj_emitentes']
-NOMES_EMPRESA = [nome.lower() for nome in CONFIG_EMPRESA['nomes_proprios']]
-
+# ===== Parâmetros de Classificação =====
 CFOPS_SAIDA = ["5101", "5102", "5103", "5949", "6101", "6102", "6108", "6949"]
 CLIENTE_FINAL_REF = "cliente final"
 
-CAMPOS_OBRIGATORIOS = ['CFOP', 'Data Emissão', 'Valor Total']
-
-# ===== Validações =====
+# ===== Funções de Validação =====
 def validar_chassi(chassi):
     return bool(chassi) and re.fullmatch(VALIDADORES["chassi"], chassi)
 
@@ -42,109 +32,90 @@ def validar_placa(placa):
         re.fullmatch(VALIDADORES["placa_antiga"], placa)
     )
 
-# ===== Função de Extração com lxml =====
+# ===== Função de Extração por XML =====
 def extrair_dados_xml(xml_path):
     try:
-        log.info(f"Processando XML: {xml_path}")
-        tree = etree.parse(xml_path)
+        tree = ET.parse(xml_path)
         root = tree.getroot()
 
         dados = {}
-        for campo, paths in MAPA_CAMPOS.items():
-            valor = None
-            for path in paths:
-                resultado = root.xpath(path)
-                if resultado:
-                    primeiro = resultado[0]
-                    if isinstance(primeiro, etree._Element) and primeiro.text:
-                        valor = primeiro.text.strip()
-                        break
-                    elif isinstance(primeiro, (str, int, float)):
-                        valor = str(primeiro).strip()
-                        break
-            dados[campo] = valor
-            if not valor and campo in CAMPOS_OBRIGATORIOS:
-                log.warning(f"Campo obrigatório '{campo}' não encontrado.")
 
-        texto_xml = etree.tostring(root, encoding='unicode')
+        # Extração via MAPA_CAMPOS (XPath simples)
+        for campo, path in MAPA_CAMPOS.items():
+            elemento = root.find(path)
+            dados[campo] = elemento.text.strip() if elemento is not None and elemento.text else None
+
+        # Extração via REGEX
+        texto_xml = ET.tostring(root, encoding='unicode')
         for campo, padrao in REGEX_EXTRACAO.items():
-            if not dados.get(campo):
-                match = re.search(padrao, texto_xml)
-                if match:
-                    dados[campo] = match.group(1)
+            match = re.search(padrao, texto_xml, re.IGNORECASE)
+            dados[campo] = match.group(1).strip() if match else None
 
+        # Validação de Chassi e Placa
         if not validar_chassi(dados.get("Chassi")):
-            log.warning(f"Chassi inválido.")
+            log.warning(f"{xml_path} - Chassi inválido ou ausente.")
             dados["Chassi"] = None
         if not validar_placa(dados.get("Placa")):
-            log.warning(f"Placa inválida.")
+            log.warning(f"{xml_path} - Placa inválida ou ausente.")
             dados["Placa"] = None
 
-        if any(not dados.get(campo) for campo in CAMPOS_OBRIGATORIOS):
-            log.error(f"XML ignorado por falta de campos essenciais.")
-            return None
-
+        dados["Fonte XML"] = xml_path  # Para rastreabilidade
         return dados
+
     except Exception as e:
-        log.error(f"Erro ao processar {xml_path}: {e}")
+        log.error(f"Erro crítico ao processar {xml_path}: {e}")
         return None
 
-# ===== Classificação =====
-def classificar_tipo_nota(row):
-    tipo_nf = str(row.get('Tipo NF') or "").strip()
-    if tipo_nf == "1":
-        return "Saída"
-    if tipo_nf == "0":
-        return "Entrada"
-
-    emitente_cnpj = (row.get('Emitente CNPJ') or "").zfill(14)
-    destinatario_cnpj = (row.get('Destinatário CNPJ') or "").zfill(14)
-    emitente_nome = (row.get('Emitente Nome') or "").lower()
-    destinatario_nome = (row.get('Destinatário Nome') or "").lower()
+# ===== Classificação Segura =====
+def classificar_tipo(row):
     cfop = str(row.get('CFOP') or "").strip()
+    destinatario = str(row.get('Destinatário Nome') or "").lower()
 
-    if emitente_cnpj in CNPJS_EMPRESA:
-        return "Saída"
-    if destinatario_cnpj in CNPJS_EMPRESA:
-        return "Entrada"
-    if any(nome in emitente_nome for nome in NOMES_EMPRESA):
-        return "Saída"
-    if any(nome in destinatario_nome for nome in NOMES_EMPRESA):
-        return "Entrada"
     if cfop in CFOPS_SAIDA:
         return "Saída"
-    if CLIENTE_FINAL_REF in destinatario_nome:
+    if CLIENTE_FINAL_REF in destinatario:
         return "Saída"
-
-    return "Entrada"
+    if cfop:
+        return "Entrada"
+    return "Não Classificado"
 
 # ===== Processamento Principal =====
 def processar_arquivos_xml(xml_paths):
-    registros = [extrair_dados_xml(path) for path in xml_paths if path.endswith(".xml")]
-    df = pd.DataFrame(filter(None, registros))
+    registros = []
+    for path in xml_paths:
+        if path.endswith(".xml"):
+            log.info(f"Processando: {path}")
+            dados = extrair_dados_xml(path)
+            if dados:
+                registros.append(dados)
 
-    colunas_finais = list(set(ORDEM_COLUNAS + list(REGEX_EXTRACAO.keys())))
-    colunas_finais += ['Tipo Nota', 'Data Entrada', 'Data Saída']
+    df = pd.DataFrame(registros)
 
-    if not df.empty:
-        df['Tipo Nota'] = df.apply(classificar_tipo_nota, axis=1)
-        df['Data Entrada'] = pd.to_datetime(df['Data Emissão'], errors='coerce')
-        df['Data Saída'] = pd.to_datetime(
-            df.apply(lambda row: row['Data Emissão'] if row['Tipo Nota'] == "Saída" else pd.NaT, axis=1),
-            errors='coerce'
-        )
-    else:
-        log.warning("Nenhum registro válido encontrado.")
-        df = pd.DataFrame(columns=colunas_finais)
+    if df.empty:
+        log.warning("Nenhum registro válido extraído.")
+        return pd.DataFrame(), pd.DataFrame()
 
-    for col in colunas_finais:
+    # Garantir colunas mínimas
+    campos_esperados = list(MAPA_CAMPOS.keys()) + list(REGEX_EXTRACAO.keys()) + ['Tipo Nota', 'Data Entrada', 'Data Saída', 'Fonte XML']
+    for col in campos_esperados:
         if col not in df.columns:
             df[col] = None
 
+    # Aplicar Classificação
+    df['Tipo Nota'] = df.apply(classificar_tipo, axis=1)
+
+    # Tratamento de Datas
+    df['Data Entrada'] = pd.to_datetime(df['Data Emissão'], errors='coerce')
+    df['Data Saída'] = df.apply(lambda row: row['Data Emissão'] if row['Tipo Nota'] == "Saída" else pd.NaT, axis=1)
+    df['Data Saída'] = pd.to_datetime(df['Data Saída'], errors='coerce')
+
+    # Logs Finais
     log.info(f"\n=== RESUMO FINAL ===")
     log.info(f"XMLs processados: {len(xml_paths)}")
-    log.info(f"Notas válidas: {len(df)}")
-    log.info(f"Entradas detectadas: {df[df['Tipo Nota'] == 'Entrada'].shape[0]}")
-    log.info(f"Saídas detectadas: {df[df['Tipo Nota'] == 'Saída'].shape[0]}")
+    log.info(f"Notas extraídas: {len(df)}")
+    log.info(f"Entradas: {df[df['Tipo Nota'] == 'Entrada'].shape[0]}")
+    log.info(f"Saídas: {df[df['Tipo Nota'] == 'Saída'].shape[0]}")
+    log.info(f"Não Classificadas: {df[df['Tipo Nota'] == 'Não Classificado'].shape[0]}")
 
     return df[df['Tipo Nota'] == "Entrada"].copy(), df[df['Tipo Nota'] == "Saída"].copy()
+
