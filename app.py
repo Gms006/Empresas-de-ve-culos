@@ -100,3 +100,53 @@ if uploaded_files:
         exibir_tabela("📃 Apuração Resumida por Trimestre", df_apuracao)
         with st.expander("📋 Ver Detalhamento por Veículo"):
             exibir_tabela("Detalhamento Fiscal de Vendas", df_detalhado)
+
+    # === DOWNLOAD EXCEL ===
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        workbook = writer.book
+        real_fmt = workbook.add_format({"num_format": "R$ #,##0.00"})
+        pct_fmt = workbook.add_format({"num_format": "0.00%"})
+        text_fmt = workbook.add_format({"num_format": "@"})
+        int_fmt = workbook.add_format({"num_format": "0"})
+
+        abas = {
+            "Entradas": df_entrada,
+            "Saídas": df_saida,
+            "Estoque": df_estoque,
+            "Auditoria": df_alertas,
+            "Resumo": df_resumo,
+            "Apuração": df_apuracao,
+        }
+
+        for aba_nome, df in abas.items():
+            for col in df.columns:
+                if any(key in col for key in formato.get("moeda", [])):
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                elif any(key in col for key in formato.get("percentual", [])):
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                elif col in formato.get("inteiro", []):
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+                elif "Data Emissão" in col or "Data Entrada" in col or "Data Saída" in col:
+                    df[col] = pd.to_datetime(df[col], errors='coerce').dt.strftime("%d/%m/%Y")
+
+            df.to_excel(writer, sheet_name=aba_nome[:31], index=False)
+            worksheet = writer.sheets[aba_nome[:31]]
+            for col_num, col_name in enumerate(df.columns):
+                if any(key in col_name for key in formato.get("moeda", [])):
+                    worksheet.set_column(col_num, col_num, 14, real_fmt)
+                elif any(key in col_name for key in formato.get("percentual", [])):
+                    worksheet.set_column(col_num, col_num, 12, pct_fmt)
+                elif any(key in col_name for key in formato.get("texto", [])):
+                    worksheet.set_column(col_num, col_num, 20, text_fmt)
+                elif col_name in formato.get("inteiro", []):
+                    worksheet.set_column(col_num, col_num, 10, int_fmt)
+                else:
+                    worksheet.set_column(col_num, col_num, 18)
+
+    st.download_button(
+        label="📥 Baixar Relatório Completo",
+        data=output.getvalue(),
+        file_name="relatorio_completo_veiculos.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
