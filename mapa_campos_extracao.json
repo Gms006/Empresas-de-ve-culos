@@ -1,74 +1,27 @@
 {
-    "Chassi": [
-        ".//nfe:chassi",
-        ".//chassi",
-        ".//infAdProd"
-    ],
-    "Placa": [
-        ".//nfe:placa",
-        ".//placa",
-        ".//infAdProd"
-    ],
-    "CFOP": [
-        ".//nfe:CFOP",
-        ".//CFOP"
-    ],
-    "Data Emissão": [
-        ".//nfe:dhEmi",
-        ".//nfe:ide/nfe:dhEmi",
-        ".//nfe:dEmi",
-        ".//ide/dEmi"
-    ],
-    "Destinatário Nome": [
-        ".//nfe:dest/nfe:xNome",
-        ".//dest/xNome"
-    ],
-    "Destinatário CNPJ": [
-        ".//nfe:dest/nfe:CNPJ",
-        ".//dest/CNPJ"
-    ],
-    "Emitente Nome": [
-        ".//nfe:emit/nfe:xNome",
-        ".//emit/xNome"
-    ],
-    "Emitente CNPJ": [
-        ".//nfe:emit/nfe:CNPJ",
-        ".//emit/CNPJ"
-    ],
-    "Produto": [
-        ".//nfe:prod/nfe:xProd",
-        ".//prod/xProd"
-    ],
-    "Valor Total": [
-        ".//nfe:ICMSTot/nfe:vNF",
-        ".//ICMSTot/vNF"
-    ],
-    "Valor Produto": [
-        ".//nfe:prod/nfe:vProd",
-        ".//prod/vProd"
-    ],
-    "Valor Desconto": [
-        ".//nfe:ICMSTot/nfe:vDesc",
-        ".//ICMSTot/vDesc"
-    ],
-    "Valor Frete": [
-        ".//nfe:ICMSTot/nfe:vFrete",
-        ".//ICMSTot/vFrete"
-    ],
-    "ICMS": [
-        ".//nfe:ICMS/nfe:vICMS",
-        ".//ICMS/vICMS"
-    ],
-    "PIS": [
-        ".//nfe:PIS/nfe:vPIS",
-        ".//PIS/vPIS"
-    ],
-    "COFINS": [
-        ".//nfe:COFINS/nfe:vCOFINS",
-        ".//COFINS/vCOFINS"
-    ],
-    "NCM": [
-        ".//nfe:prod/nfe:NCM",
-        ".//prod/NCM"
-    ]
+    "essenciais": {
+        "CFOP": [
+            "//*[local-name()='CFOP']"
+        ],
+        "Data Emissão": [
+            "//*[local-name()='dhEmi']"
+        ],
+        "Destinatário Nome": [
+            "//*[local-name()='dest']/*[local-name()='xNome']"
+        ],
+        "Valor Total": [
+            "//*[local-name()='vNF']"
+        ]
+    },
+    "complementares": {
+        "Chassi": [
+            "//*[local-name()='chassi']"
+        ],
+        "Placa": [
+            "//*[local-name()='placa']"
+        ],
+        "Renavam": [
+            "//*[local-name()='RENAVAM']"
+        ]
+    }
 }
