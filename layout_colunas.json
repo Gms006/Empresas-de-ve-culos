@@ -4,12 +4,13 @@
   "Valor Total": {"tipo": "float", "ordem": 3},
   "Emitente Nome": {"tipo": "str", "ordem": 4},
   "Destinatário Nome": {"tipo": "str", "ordem": 5},
-  "Chassi": {"tipo": "str", "ordem": 6},
-  "Placa": {"tipo": "str", "ordem": 7},
-  "Renavam": {"tipo": "str", "ordem": 8},
-  "KM": {"tipo": "int", "ordem": 9},
-  "Ano Modelo": {"tipo": "int", "ordem": 10},
-  "Ano Fabricação": {"tipo": "int", "ordem": 11},
-  "Cor": {"tipo": "str", "ordem": 12},
-  "Tipo Nota": {"tipo": "str", "ordem": 13}
+  "Destinatário CNPJ": {"tipo": "str", "ordem": 6},
+  "Destinatário CPF": {"tipo": "str", "ordem": 7},
+  "Chassi": {"tipo": "str", "ordem": 8},
+  "Placa": {"tipo": "str", "ordem": 9},
+  "Renavam": {"tipo": "str", "ordem": 10},
+  "KM": {"tipo": "int", "ordem": 11},
+  "Ano Modelo": {"tipo": "int", "ordem": 12},
+  "Ano Fabricação": {"tipo": "int", "ordem": 13},
+  "Cor": {"tipo": "str", "ordem": 14}
 }
