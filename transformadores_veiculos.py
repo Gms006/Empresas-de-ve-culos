@@ -14,9 +14,10 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     col_saida = 'Data Saída_saida'
     col_alvo = col_saida if col_saida in df_estoque.columns else 'Data Saída'
     if col_alvo in df_estoque.columns:
-    df_estoque['Situação'] = df_estoque[col_alvo].notna().map({True: 'Vendido', False: 'Em Estoque'})
-else:
-    df_estoque['Situação'] = "Desconhecida"
+        df_estoque['Situação'] = df_estoque[col_alvo].notna().map({True: 'Vendido', False: 'Em Estoque'})
+    else:
+        df_estoque['Situação'] = "Desconhecida"
+
     df_estoque['Lucro'] = df_estoque['Valor Venda'].astype(float) - df_estoque['Valor Entrada'].astype(float)
 
     df_estoque.rename(columns={
@@ -26,8 +27,6 @@ else:
     }, inplace=True)
 
     return df_estoque
-
-def gerar_alertas_auditoria(df_entrada, df_saida):
     erros = []
     df_entrada = df_entrada.copy()
     df_saida = df_saida.copy()
