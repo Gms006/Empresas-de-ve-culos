@@ -24,10 +24,26 @@ with open("classificacao_produto.json", "r", encoding="utf-8") as f:
 veiculo_keywords = classificacao.get("veiculo_keywords", [])
 blacklist = classificacao.get("blacklist", [])
 
+
 def classificar_produto_linha(row):
+    import re
+    
     chassi = row.get("Chassi", "")
     placa = row.get("Placa", "")
     produto = str(row.get("Produto") or "").upper()
+
+    # Blacklist adicional para evitar falsos positivos
+    blacklist = ["PLACA DE CARRO", "PLACA MOTO", "CARREGADOR", "ETIQUETA", "TAMPA", "SUPORTE", "ADESIVO", "FILTRO", "CAIXA"]
+    if any(p in produto for p in blacklist):
+        return "Outro Produto"
+
+    # Fallback de chassi genérico (17 dígitos válidos)
+    chassi_fallback = ""
+    match_chassi = re.search(r"(?<![A-Z0-9])[A-HJ-NPR-Z0-9]{17}(?![A-Z0-9])", produto)
+    if match_chassi:
+        chassi_fallback = match_chassi.group(0)
+    chassi = row.get("Chassi") or chassi_fallback
+
 
     if any(palavra in produto for palavra in blacklist):
         return "Outro Produto"
