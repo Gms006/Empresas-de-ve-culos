@@ -1,47 +1,67 @@
+
 import os
 import re
 import json
 import xml.etree.ElementTree as ET
-import pandas as pd
 from datetime import datetime
+import pandas as pd
+
+# Carregamento de configurações via JSON externo
+with open("mapa_campos_extracao.json", "r", encoding="utf-8") as f:
+    mapa = json.load(f)
+with open("formato_colunas.json", "r", encoding="utf-8") as f:
+    formato = json.load(f)
+with open("ordem_colunas.json", "r", encoding="utf-8") as f:
+    ordem = json.load(f)["ordem_preferida"]
 
 def obter_valor(ns, tag, contexto):
     try:
-        return contexto.find(f"ns:{tag}", ns).text
+        valor = contexto.find(f"ns:{tag}", ns)
+        return valor.text if valor is not None else ""
     except:
         return ""
 
 def aplicar_tipo(valor, campo, formato):
     try:
+        if not valor:
+            return 0.0 if campo in formato.get("moeda", []) or campo in formato.get("percentual", []) else 0
+
         if campo in formato.get("moeda", []) or campo in formato.get("percentual", []):
-            return float(valor.replace(",", "."))
+            return float(str(valor).replace(",", "."))
         elif campo in formato.get("inteiro", []):
             return int(float(valor))
         else:
-            return str(valor).strip()
+            return valor
     except:
         return valor
 
-def processar_arquivos_xml(lista_de_caminhos):
-    with open("mapa_campos_extracao.json", "r", encoding="utf-8") as f:
-        mapa = json.load(f)
-    with open("formato_colunas.json", "r", encoding="utf-8") as f:
-        formato = json.load(f)
+def reordenar_colunas(df, ordem):
+    if df.empty:
+        return df
+    colunas = [c for c in ordem if c in df.columns] + [c for c in df.columns if c not in ordem]
+    return df[colunas]
 
+def processar_arquivos_xml(lista_de_caminhos):
     entradas, saidas = [], []
+    erros = []
+
     for caminho in lista_de_caminhos:
         try:
             tree = ET.parse(caminho)
             root = tree.getroot()
-            ns = {"ns": "http://www.portalfiscal.inf.br/nfe"}
+            ns = {'ns': 'http://www.portalfiscal.inf.br/nfe'}
             infNFe = root.find(".//ns:infNFe", ns)
-            if infNFe is None:
-                continue
 
-            ide = infNFe.find("ns:ide", ns)
-            emit = infNFe.find("ns:emit", ns)
-            dest = infNFe.find("ns:dest", ns)
+            if infNFe is None:
+                raise ValueError("XML sem infNFe")
+
+            emit = infNFe.find(".//ns:emit", ns)
+            dest = infNFe.find(".//ns:dest", ns)
+            ide = infNFe.find(".//ns:ide", ns)
             produtos = infNFe.findall(".//ns:det", ns)
+
+            if None in [emit, dest, ide] or not produtos:
+                raise ValueError("XML incompleto ou sem produtos")
 
             for det in produtos:
                 linha = {}
@@ -61,37 +81,32 @@ def processar_arquivos_xml(lista_de_caminhos):
                         contexto = imposto.find(f"ns:{secao}", ns) if imposto is not None else None
 
                     if contexto is not None:
-                        for tag_xml, nome_coluna in campos.items():
-                            valor = obter_valor(ns, tag_xml, contexto)
+                        for xml_tag, nome_coluna in campos.items():
+                            valor = obter_valor(ns, xml_tag, contexto)
                             linha[nome_coluna] = aplicar_tipo(valor, nome_coluna, formato)
 
-                # Classificação de tipo da nota
-                cfop = linha.get("CFOP", "")
-                cnpj_emit = linha.get("Emitente CNPJ", "")
-                cnpj_dest = linha.get("Destinatário CNPJ", "")
-                tipo = "Entrada" if cfop.startswith("1") or cfop.startswith("2") or cnpj_emit == cnpj_dest else "Saída"
-                linha["Tipo"] = tipo
+                # Determinar tipo (Entrada/Saída)
+                cnpj_emitente = obter_valor(ns, "CNPJ", emit)
+                nome_destinatario = obter_valor(ns, "xNome", dest).upper()
+                cfop = obter_valor(ns, "CFOP", prod)
+                tipo = "Entrada" if cfop.startswith("1") or cfop.startswith("2") else (
+                    "Entrada" if "BDA COMERCIO" in nome_destinatario else "Saída"
+                )
 
+                linha["Tipo"] = tipo
                 if tipo == "Entrada":
                     entradas.append(linha)
                 else:
                     saidas.append(linha)
+
         except Exception as e:
-            print(f"Erro ao processar {caminho}: {e}")
+            erros.append((os.path.basename(caminho), str(e)))
+            continue
 
     df_entrada = pd.DataFrame(entradas)
     df_saida = pd.DataFrame(saidas)
 
-    try:
-        with open("ordem_colunas.json", "r", encoding="utf-8") as f:
-            ordem = json.load(f)["ordem_preferida"]
-        if not df_entrada.empty:
-            colunas_entrada = [c for c in ordem if c in df_entrada.columns] + [c for c in df_entrada.columns if c not in ordem]
-            df_entrada = df_entrada[colunas_entrada]
-        if not df_saida.empty:
-            colunas_saida = [c for c in ordem if c in df_saida.columns] + [c for c in df_saida.columns if c not in ordem]
-            df_saida = df_saida[colunas_saida]
-    except Exception as e:
-        print("Erro ao reordenar colunas:", e)
+    df_entrada = reordenar_colunas(df_entrada, ordem)
+    df_saida = reordenar_colunas(df_saida, ordem)
 
     return df_entrada, df_saida
