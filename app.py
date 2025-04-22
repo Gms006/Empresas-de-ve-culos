@@ -30,16 +30,15 @@ if uploaded_files:
             elif file.name.endswith(".xml"):
                 xml_paths.append(filepath)
 
-        # Processar XMLs com base na nova estrutura de configuração
+        # Processar XMLs e já obter DataFrame padronizado
         df_extraido = processar_xmls(xml_paths)
 
         if df_extraido.empty:
             st.warning("⚠️ Nenhum dado extraído dos XMLs. Verifique os arquivos enviados.")
         else:
-            # Aplicar configuração (tipos e ordem)
+            # Configuração adicional (se necessário)
             df_configurado = configurar_planilha(df_extraido)
 
-            # Garantir que 'Tipo Nota' existe antes de filtrar
             if 'Tipo Nota' in df_configurado.columns:
                 df_entrada = df_configurado[df_configurado['Tipo Nota'] == 'Entrada'].copy()
                 df_saida = df_configurado[df_configurado['Tipo Nota'] == 'Saída'].copy()
