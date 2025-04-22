@@ -39,7 +39,7 @@ def validar_placa(placa):
         re.fullmatch(VALIDADORES["placa_antiga"], placa)
     )
 
-# ===== Extração com lxml =====
+# ===== Extração Corrigida com lxml + XPath =====
 def extrair_dados_xml(xml_path):
     try:
         log.info(f"Processando XML: {xml_path}")
@@ -51,9 +51,14 @@ def extrair_dados_xml(xml_path):
             valor = None
             for path in paths:
                 resultado = root.xpath(path)
-                if resultado and isinstance(resultado[0], etree._Element) and resultado[0].text:
-                    valor = resultado[0].text.strip()
-                    break
+                if resultado:
+                    primeiro = resultado[0]
+                    if isinstance(primeiro, etree._Element) and primeiro.text:
+                        valor = primeiro.text.strip()
+                        break
+                    elif isinstance(primeiro, str):
+                        valor = primeiro.strip()
+                        break
             dados[campo] = valor
             if not valor and campo in CAMPOS_OBRIGATORIOS:
                 log.warning(f"Campo obrigatório '{campo}' não encontrado no XML.")
