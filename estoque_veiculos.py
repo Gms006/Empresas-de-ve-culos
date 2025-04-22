@@ -142,6 +142,12 @@ def processar_arquivos_xml(lista_de_caminhos):
     df_saida = pd.DataFrame(saidas)
 
     df_entrada = reordenar_colunas(df_entrada, ordem)
+
+    if 'Data Emissão' in df_entrada.columns:
+        df_entrada['Data Entrada'] = df_entrada['Data Emissão']
+    else:
+        df_entrada['Data Entrada'] = pd.NaT
+
     df_saida = reordenar_colunas(df_saida, ordem)
 
     return df_entrada, df_saida
