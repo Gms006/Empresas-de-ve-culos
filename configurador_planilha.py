@@ -13,20 +13,26 @@ def configurar_planilha(df):
         if coluna not in df.columns:
             df[coluna] = None
 
-    # Ajustar tipos novamente se necessário (reforço)
+    # Ajustar tipos conforme o layout (reforço)
     for coluna, config in LAYOUT_COLUNAS.items():
         tipo = config.get("tipo")
-        if tipo == "float":
-            df[coluna] = pd.to_numeric(df[coluna], errors='coerce')
-        elif tipo == "int":
-            df[coluna] = pd.to_numeric(df[coluna], errors='coerce').fillna(0).astype(int)
-        elif tipo == "date":
-            df[coluna] = pd.to_datetime(df[coluna], errors='coerce')
-        else:
-            df[coluna] = df[coluna].astype(str)
+        if coluna in df.columns:
+            if tipo == "float":
+                df[coluna] = pd.to_numeric(df[coluna], errors='coerce')
+            elif tipo == "int":
+                df[coluna] = pd.to_numeric(df[coluna], errors='coerce').fillna(0).astype(int)
+            elif tipo == "date":
+                df[coluna] = pd.to_datetime(df[coluna], errors='coerce')
+            else:
+                df[coluna] = df[coluna].astype(str)
 
-    # Ordenar colunas conforme o layout
-    colunas_ordenadas = sorted(LAYOUT_COLUNAS.items(), key=lambda x: x[1]['ordem'])
-    df = df[[col for col, _ in colunas_ordenadas if col in df.columns] + ['Tipo Nota']]
+    # Ordenar colunas conforme o layout, evitando duplicidade
+    colunas_ordenadas = [col for col, _ in sorted(LAYOUT_COLUNAS.items(), key=lambda x: x[1]['ordem']) if col in df.columns]
+
+    # Adicionar 'Tipo Nota' apenas se necessário
+    if 'Tipo Nota' in df.columns and 'Tipo Nota' not in colunas_ordenadas:
+        colunas_ordenadas.append('Tipo Nota')
+
+    df = df[colunas_ordenadas]
 
     return df
