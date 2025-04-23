@@ -29,19 +29,17 @@ def validar_placa(placa):
         re.fullmatch(CONFIG_EXTRACAO["validadores"]["placa_antiga"], placa)
     )
 
-# 🚨 Nova Lógica de Classificação com CNPJ
+# 🚨 Classificação SEM "Outros"
 def classificar_tipo_nota(row, cnpj_empresa):
     emitente = str(row.get('Emitente CNPJ') or "").replace('.', '').replace('/', '').replace('-', '')
     destinatario = str(row.get('Destinatário CNPJ') or "").replace('.', '').replace('/', '').replace('-', '')
 
     if destinatario == cnpj_empresa:
         return "Entrada"
-    elif emitente == cnpj_empresa:
-        return "Saída"
     else:
-        return "Outros"
+        return "Saída"
 
-# Função principal de extração de dados XML
+# Função principal de extração
 def extrair_dados_xml(xml_path):
     try:
         tree = ET.parse(xml_path)
@@ -50,13 +48,13 @@ def extrair_dados_xml(xml_path):
         ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
         dados = {col: None for col in LAYOUT_COLUNAS.keys()}
 
-        # Extração via XPath conforme configuração
+        # Extração via XPath
         for campo, path in CONFIG_EXTRACAO["xpath_campos"].items():
             elemento = root.find(path, ns)
             if campo in dados:
                 dados[campo] = elemento.text.strip() if elemento is not None and elemento.text else None
 
-        # Extrair tpNF diretamente
+        # Extrair tpNF se necessário
         tpNF_element = root.find('.//nfe:ide/nfe:tpNF', ns)
         dados['tpNF'] = tpNF_element.text.strip() if tpNF_element is not None and tpNF_element.text else None
 
@@ -74,7 +72,6 @@ def extrair_dados_xml(xml_path):
             if campo in dados:
                 dados[campo] = match.group(1).strip() if match else None
 
-        # Validação de Chassi e Placa
         if not validar_chassi(dados.get("Chassi")):
             dados["Chassi"] = None
         if not validar_placa(dados.get("Placa")):
@@ -86,7 +83,7 @@ def extrair_dados_xml(xml_path):
         log.error(f"Erro ao processar {xml_path}: {e}")
         return {col: None for col in LAYOUT_COLUNAS.keys()}
 
-# Processar múltiplos XMLs com CNPJ dinâmico
+# Processar XMLs com classificação correta
 def processar_xmls(xml_paths, cnpj_empresa):
     registros = [extrair_dados_xml(p) for p in xml_paths if p.endswith(".xml")]
     df = pd.DataFrame(registros)
