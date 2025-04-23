@@ -1,4 +1,5 @@
-
+modules/estoque_veiculos.py
+```python
 import pandas as pd
 import xml.etree.ElementTree as ET
 import json
@@ -15,7 +16,7 @@ CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config')
 with open(os.path.join(CONFIG_PATH, 'extracao_config.json'), encoding='utf-8') as f:
     CONFIG_EXTRACAO = json.load(f)
 
-with open(os.path.join(CONFIG_PATH, 'layout_colunas.json',), encoding='utf-8') as f:
+with open(os.path.join(CONFIG_PATH, 'layout_colunas.json'), encoding='utf-8') as f:
     LAYOUT_COLUNAS = json.load(f)
 
 # Validações
