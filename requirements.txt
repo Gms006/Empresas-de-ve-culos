@@ -5,3 +5,4 @@ lxml
 xlsxwriter
 logging
 matplotlib 
+seaborn
