@@ -1,3 +1,5 @@
+modules/estoque_veiculos.py
+```python
 import pandas as pd
 import xml.etree.ElementTree as ET
 import json
@@ -22,7 +24,7 @@ with open(os.path.join(CONFIG_PATH, 'layout_colunas.json'), encoding='utf-8') as
 with open(os.path.join(CONFIG_PATH, 'empresas_config.json'), encoding='utf-8') as f:
     EMPRESAS_CONFIG = json.load(f)
 
-# Consolidar CNPJs da Empresa
+# Consolidar CNPJs da Empresa (mantido para outras validações)
 CNPJS_EMPRESA = []
 for empresa in EMPRESAS_CONFIG.values():
     CNPJS_EMPRESA.extend(empresa.get("cnpj_emitentes", []))
@@ -37,16 +39,21 @@ def validar_placa(placa):
         re.fullmatch(CONFIG_EXTRACAO["validadores"]["placa_antiga"], placa)
     )
 
-# Classificação inteligente
+# Nova Lógica de Classificação Inteligente
 def classificar_tipo_nota(row):
     cfop = str(row.get('CFOP') or "").strip()
-    destinatario_cnpj = str(row.get('Destinatário CNPJ') or "").replace(".", "").replace("/", "").replace("-", "")
+    tpNF = str(row.get('tpNF') or "").strip()
 
-    if cfop in ["5101", "5102", "5103", "5949", "6101", "6102", "6108", "6949"]:
+    if tpNF == '0':
+        return "Entrada"
+    elif tpNF == '1':
         return "Saída"
-    if destinatario_cnpj and destinatario_cnpj not in CNPJS_EMPRESA:
-        return "Saída"
-    return "Entrada"
+    elif cfop:
+        if cfop.startswith(('1', '2', '3')):
+            return "Entrada"
+        elif cfop.startswith(('5', '6', '7')):
+            return "Saída"
+    return "Entrada"  # Padrão seguro
 
 # Função principal de extração
 def extrair_dados_xml(xml_path):
@@ -55,15 +62,19 @@ def extrair_dados_xml(xml_path):
         root = tree.getroot()
 
         ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
-
         dados = {col: None for col in LAYOUT_COLUNAS.keys()}
 
+        # Extração via XPath conforme configurado
         for campo, path in CONFIG_EXTRACAO["xpath_campos"].items():
             elemento = root.find(path, ns)
             if campo in dados:
                 dados[campo] = elemento.text.strip() if elemento is not None and elemento.text else None
 
-        # Ajuste para Ano Modelo / Fabricação
+        # Extrair tpNF diretamente do XML
+        tpNF_element = root.find('.//nfe:ide/nfe:tpNF', ns)
+        dados['tpNF'] = tpNF_element.text.strip() if tpNF_element is not None and tpNF_element.text else None
+
+        # Ajuste para regex (Ano Modelo, Chassi, Placa, etc.)
         texto_xml = ET.tostring(root, encoding='unicode')
         anos = re.search(CONFIG_EXTRACAO["regex_extracao"]["Ano Modelo"], texto_xml, re.IGNORECASE)
         if anos:
@@ -82,13 +93,13 @@ def extrair_dados_xml(xml_path):
         if not validar_placa(dados.get("Placa")):
             dados["Placa"] = None
 
-        print(f"[EXTRACAO] {xml_path} => {dados}")
         return dados
 
     except Exception as e:
         log.error(f"Erro ao processar {xml_path}: {e}")
         return {col: None for col in LAYOUT_COLUNAS.keys()}
 
+# Função para processar múltiplos XMLs
 def processar_xmls(xml_paths):
     registros = [extrair_dados_xml(p) for p in xml_paths if p.endswith(".xml")]
     df = pd.DataFrame(registros)
