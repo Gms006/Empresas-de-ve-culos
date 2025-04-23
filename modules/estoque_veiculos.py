@@ -3,18 +3,23 @@ import xml.etree.ElementTree as ET
 import json
 import re
 import logging
+import os
 
+# Configuração de Logs
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 log = logging.getLogger(__name__)
 
+# Caminho para a pasta de configurações
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config')
+
 # Carregar Configurações
-with open('extracao_config.json', encoding='utf-8') as f:
+with open(os.path.join(CONFIG_PATH, 'extracao_config.json'), encoding='utf-8') as f:
     CONFIG_EXTRACAO = json.load(f)
 
-with open('layout_colunas.json', encoding='utf-8') as f:
+with open(os.path.join(CONFIG_PATH, 'layout_colunas.json'), encoding='utf-8') as f:
     LAYOUT_COLUNAS = json.load(f)
 
-with open('empresas_config.json', encoding='utf-8') as f:
+with open(os.path.join(CONFIG_PATH, 'empresas_config.json'), encoding='utf-8') as f:
     EMPRESAS_CONFIG = json.load(f)
 
 # Consolidar CNPJs da Empresa
