@@ -15,7 +15,7 @@ CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config')
 with open(os.path.join(CONFIG_PATH, 'extracao_config.json'), encoding='utf-8') as f:
     CONFIG_EXTRACAO = json.load(f)
 
-with open(os.path.join(CONFIG_PATH, 'layout_colunas.json'), encoding='utf-8') as f:
+with open(os.path.join(CONFIG_PATH, 'layout_colunas.json',), encoding='utf-8') as f:
     LAYOUT_COLUNAS = json.load(f)
 
 # Validações
@@ -46,33 +46,30 @@ def classificar_produto(row):
         return "Veículo"
     return "Consumo"
 
-# Extração por Produto com Garantia de Colunas
+# Extração por Produto com Padronização
 def extrair_dados_xml(xml_path):
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
         ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
 
-        emitente_cnpj = root.findtext('.//nfe:emit/nfe:CNPJ', namespaces=ns) or 'Não informado'
-        destinatario_cnpj = root.findtext('.//nfe:dest/nfe:CNPJ', namespaces=ns) or 'Não informado'
-        cfop = root.findtext('.//nfe:det/nfe:prod/nfe:CFOP', namespaces=ns)
-        data_emissao = root.findtext('.//nfe:ide/nfe:dhEmi', namespaces=ns)
-        emitente_nome = root.findtext('.//nfe:emit/nfe:xNome', namespaces=ns)
-        destinatario_nome = root.findtext('.//nfe:dest/nfe:xNome', namespaces=ns)
-        valor_total = root.findtext('.//nfe:total/nfe:ICMSTot/nfe:vNF', namespaces=ns)
+        # Garantir campos do cabeçalho sempre preenchidos
+        cabecalho = {
+            'Emitente Nome': root.findtext('.//nfe:emit/nfe:xNome', namespaces=ns) or 'Não informado',
+            'Emitente CNPJ': root.findtext('.//nfe:emit/nfe:CNPJ', namespaces=ns) or 'Não informado',
+            'Destinatario Nome': root.findtext('.//nfe:dest/nfe:xNome', namespaces=ns) or 'Não informado',
+            'Destinatario CNPJ': root.findtext('.//nfe:dest/nfe:CNPJ', namespaces=ns) or 'Não informado',
+            'CFOP': root.findtext('.//nfe:det/nfe:prod/nfe:CFOP', namespaces=ns),
+            'Data Emissão': root.findtext('.//nfe:ide/nfe:dhEmi', namespaces=ns),
+            'Valor Total': root.findtext('.//nfe:total/nfe:ICMSTot/nfe:vNF', namespaces=ns)
+        }
 
         registros = []
+        campos_padrao = list(LAYOUT_COLUNAS.keys()) + ['Produto']
 
         for item in root.findall('.//nfe:det', ns):
-            dados = {col: None for col in LAYOUT_COLUNAS.keys()}
-
-            dados['CFOP'] = cfop
-            dados['Data Emissão'] = data_emissao
-            dados['Emitente Nome'] = emitente_nome
-            dados['Emitente CNPJ'] = emitente_cnpj
-            dados['Destinatario Nome'] = destinatario_nome
-            dados['Destinatario CNPJ'] = destinatario_cnpj
-            dados['Valor Total'] = valor_total
+            dados = {col: None for col in campos_padrao}
+            dados.update(cabecalho)
 
             xProd = item.findtext('.//nfe:prod/nfe:xProd', namespaces=ns) or ""
             infAdProd = item.findtext('.//nfe:prod/nfe:infAdProd', namespaces=ns) or ""
@@ -104,20 +101,25 @@ def extrair_dados_xml(xml_path):
         log.error(f"Erro ao processar {xml_path}: {e}")
         return []
 
-# Processar XMLs com segurança
+# Processar XMLs com Validação
 def processar_xmls(xml_paths, cnpj_empresa):
     todos_registros = []
     for p in xml_paths:
         registros = extrair_dados_xml(p)
-        todos_registros.extend(registros)
+        if registros:
+            todos_registros.extend(registros)
+        else:
+            log.warning(f"XML sem produtos extraídos: {p}")
+
+    if not todos_registros:
+        log.error("Nenhum dado extraído.")
+        return pd.DataFrame()
 
     df = pd.DataFrame(todos_registros)
 
-    # Garantir que as colunas existam
-    if 'Emitente CNPJ' not in df.columns:
-        df['Emitente CNPJ'] = 'Não informado'
-    if 'Destinatario CNPJ' not in df.columns:
-        df['Destinatario CNPJ'] = 'Não informado'
+    if df.empty:
+        log.error("DataFrame vazio após consolidação.")
+        return df
 
     df['Tipo Nota'] = df.apply(lambda row: classificar_tipo_nota(row['Emitente CNPJ'], row['Destinatario CNPJ'], cnpj_empresa), axis=1)
     df['Tipo Produto'] = df.apply(classificar_produto, axis=1)
