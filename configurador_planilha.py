@@ -1,43 +1,35 @@
 import pandas as pd
 import json
 
-with open('layout_colunas.json', encoding='utf-8') as f:
-    LAYOUT_COLUNAS = json.load(f)
+# Carregar Configuração
+with open('config/layout_colunas.json', encoding='utf-8') as f:
+    LAYOUT = json.load(f)
 
 def configurar_planilha(df):
-    df = df.copy()
+    # Garantir todas as colunas do layout
+    for col in LAYOUT.keys():
+        if col not in df.columns:
+            df[col] = None
 
-    print(f"[CONFIGURADOR] Colunas iniciais: {list(df.columns)}")
-
-    for coluna in LAYOUT_COLUNAS.keys():
-        if coluna not in df.columns:
-            df[coluna] = None
-
-    for coluna, config in LAYOUT_COLUNAS.items():
-        tipo = config.get("tipo")
-        if coluna in df.columns:
+    # Aplicar Tipagem
+    for col, props in LAYOUT.items():
+        tipo = props["tipo"]
+        if col in df.columns:
             if tipo == "float":
-                df[coluna] = pd.to_numeric(df[coluna], errors='coerce')
+                df[col] = pd.to_numeric(df[col], errors='coerce')
             elif tipo == "int":
-                df[coluna] = pd.to_numeric(df[coluna], errors='coerce').fillna(0).astype(int)
+                df[col] = pd.to_numeric(df[col], errors='coerce').astype('Int64')
             elif tipo == "date":
-                df[coluna] = pd.to_datetime(df[coluna], errors='coerce')
+                df[col] = pd.to_datetime(df[col], errors='coerce')
             else:
-                df[coluna] = df[coluna].astype(str)
+                df[col] = df[col].astype(str)
 
-    colunas_ordenadas = [col for col, _ in sorted(LAYOUT_COLUNAS.items(), key=lambda x: x[1]['ordem']) if col in df.columns]
+    # Ordenar colunas conforme 'ordem'
+    ordenadas = sorted(LAYOUT.items(), key=lambda x: x[1]['ordem'])
+    colunas_finais = [col for col, _ in ordenadas]
 
-    if 'Tipo Nota' in df.columns and 'Tipo Nota' not in colunas_ordenadas:
-        colunas_ordenadas.append('Tipo Nota')
-
-    df = df[colunas_ordenadas]
-
-    if df.columns.duplicated().any():
-        print("[ALERTA] Colunas duplicadas detectadas! Removendo...")
-        print(f"Antes: {list(df.columns)}")
-
-    df = df.loc[:, ~df.columns.duplicated()]
-
-    print(f"[CONFIGURADOR] Colunas finais: {list(df.columns)}")
+    # Manter colunas adicionais no final
+    extras = [col for col in df.columns if col not in colunas_finais]
+    df = df[colunas_finais + extras]
 
     return df
