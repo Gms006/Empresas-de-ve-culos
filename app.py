@@ -4,10 +4,15 @@ import zipfile
 import tempfile
 import os
 
-from estoque_veiculos import processar_xmls
-from configurador_planilha import configurar_planilha
-from transformadores_veiculos import gerar_estoque_fiscal, gerar_alertas_auditoria, gerar_kpis, gerar_resumo_mensal
-from apuracao_fiscal import calcular_apuracao
+from modules.estoque_veiculos import processar_xmls
+from modules.configurador_planilha import configurar_planilha
+from modules.transformadores_veiculos import (
+    gerar_estoque_fiscal,
+    gerar_alertas_auditoria,
+    gerar_kpis,
+    gerar_resumo_mensal
+)
+from modules.apuracao_fiscal import calcular_apuracao
 
 st.set_page_config(page_title="Painel Fiscal de Veículos", layout="wide")
 st.title("🚗 Painel Fiscal de Veículos")
@@ -26,17 +31,21 @@ if uploaded_files:
             if file.name.endswith(".zip"):
                 with zipfile.ZipFile(filepath, "r") as zip_ref:
                     zip_ref.extractall(tmpdir)
-                    xml_paths += [os.path.join(tmpdir, name) for name in zip_ref.namelist() if name.endswith(".xml")]
+                    xml_paths += [
+                        os.path.join(tmpdir, name)
+                        for name in zip_ref.namelist()
+                        if name.endswith(".xml")
+                    ]
             elif file.name.endswith(".xml"):
                 xml_paths.append(filepath)
 
-        # Processar XMLs e já obter DataFrame padronizado
+        # Processar XMLs e obter DataFrame padronizado
         df_extraido = processar_xmls(xml_paths)
 
         if df_extraido.empty:
             st.warning("⚠️ Nenhum dado extraído dos XMLs. Verifique os arquivos enviados.")
         else:
-            # Configuração adicional (se necessário)
+            # Configuração adicional
             df_configurado = configurar_planilha(df_extraido)
 
             if 'Tipo Nota' in df_configurado.columns:
