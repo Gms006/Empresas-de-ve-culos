@@ -1,13 +1,12 @@
-
 {
   "xpath_campos": {
     "CFOP": ".//nfe:det/nfe:prod/nfe:CFOP",
     "Data Emissão": ".//nfe:ide/nfe:dhEmi",
     "Emitente Nome": ".//nfe:emit/nfe:xNome",
     "Emitente CNPJ": ".//nfe:emit/nfe:CNPJ",
-    "Destinatário Nome": ".//nfe:dest/nfe:xNome",
-    "Destinatário CNPJ": ".//nfe:dest/nfe:CNPJ",
-    "Destinatário CPF": ".//nfe:dest/nfe:CPF",
+    "Destinatario Nome": ".//nfe:dest/nfe:xNome",
+    "Destinatario CNPJ": ".//nfe:dest/nfe:CNPJ",
+    "Destinatario CPF": ".//nfe:dest/nfe:CPF",
     "Valor Total": ".//nfe:total/nfe:ICMSTot/nfe:vNF",
     "Produto": ".//nfe:det/nfe:prod/nfe:xProd",
     "tpNF": ".//nfe:ide/nfe:tpNF"
