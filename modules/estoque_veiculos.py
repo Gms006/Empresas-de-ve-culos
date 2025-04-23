@@ -1,5 +1,3 @@
-modules/estoque_veiculos.py
-```python
 import pandas as pd
 import xml.etree.ElementTree as ET
 import json
