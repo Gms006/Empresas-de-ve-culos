@@ -3,7 +3,6 @@ import pandas as pd
 import zipfile
 import tempfile
 import os
-from io import BytesIO
 
 from estoque_veiculos import processar_xmls
 from configurador_planilha import configurar_planilha
@@ -31,11 +30,13 @@ if uploaded_files:
             elif file.name.endswith(".xml"):
                 xml_paths.append(filepath)
 
+        # Processar XMLs e já obter DataFrame padronizado
         df_extraido = processar_xmls(xml_paths)
 
         if df_extraido.empty:
             st.warning("⚠️ Nenhum dado extraído dos XMLs. Verifique os arquivos enviados.")
         else:
+            # Configuração adicional (se necessário)
             df_configurado = configurar_planilha(df_extraido)
 
             if 'Tipo Nota' in df_configurado.columns:
@@ -58,19 +59,6 @@ if uploaded_files:
                 with aba[0]:
                     st.subheader("📦 Estoque Fiscal")
                     st.dataframe(df_estoque)
-
-                    # Botão de download ajustado
-                    buffer = BytesIO()
-                    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-                        df_estoque.to_excel(writer, index=False, sheet_name="Estoque Fiscal")
-                    buffer.seek(0)  # Garante que o buffer esteja no início
-
-                    st.download_button(
-                        label="📥 Baixar Planilha Completa",
-                        data=buffer,
-                        file_name="Estoque_Fiscal_Completo.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
 
                 with aba[1]:
                     st.subheader("🕵️ Relatório de Auditoria")
