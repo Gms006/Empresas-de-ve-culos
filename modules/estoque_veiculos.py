@@ -1,3 +1,5 @@
+modules/estoque_veiculos.py
+```python
 import pandas as pd
 import xml.etree.ElementTree as ET
 import json
@@ -51,7 +53,7 @@ def classificar_produto(produto):
         return "Veículo"
     return "Consumo"
 
-# Função principal de extração
+# Extração principal
 def extrair_dados_xml(xml_path):
     try:
         tree = ET.parse(xml_path)
@@ -60,20 +62,16 @@ def extrair_dados_xml(xml_path):
 
         dados = {col: None for col in LAYOUT_COLUNAS.keys()}
 
-        # Extração direta via XPath
         for campo, path in CONFIG_EXTRACAO["xpath_campos"].items():
             elemento = root.find(path, ns)
             if campo in dados:
                 dados[campo] = elemento.text.strip() if elemento is not None and elemento.text else None
 
-        # Capturar o conteúdo de <infAdProd>
         infAdProd_element = root.find('.//nfe:det/nfe:prod/nfe:infAdProd', ns)
         infAdProd_texto = infAdProd_element.text.strip() if infAdProd_element is not None and infAdProd_element.text else ""
 
-        # Concatenar Produto + Info Adicional
         produto_completo = f"{dados.get('Produto', '')} {infAdProd_texto}"
 
-        # Aplicar regex no texto concatenado
         for campo, padrao in CONFIG_EXTRACAO["regex_extracao"].items():
             if campo == "Ano Modelo":
                 anos = re.search(padrao, produto_completo, re.IGNORECASE)
@@ -85,7 +83,6 @@ def extrair_dados_xml(xml_path):
                 if campo in dados and not dados[campo]:
                     dados[campo] = match.group(1).strip() if match else None
 
-        # Validação final de Chassi e Placa
         if not validar_chassi(dados.get("Chassi")):
             dados["Chassi"] = None
         if not validar_placa(dados.get("Placa")):
@@ -97,10 +94,16 @@ def extrair_dados_xml(xml_path):
         log.error(f"Erro ao processar {xml_path}: {e}")
         return {col: None for col in LAYOUT_COLUNAS.keys()}
 
-# Processar XMLs
+# Processamento com verificação segura
 def processar_xmls(xml_paths, cnpj_empresa):
     registros = [extrair_dados_xml(p) for p in xml_paths if p.endswith(".xml")]
     df = pd.DataFrame(registros)
+
     df['Tipo Nota'] = df.apply(lambda row: classificar_tipo_nota(row, cnpj_empresa), axis=1)
-    df['Tipo Produto'] = df['Produto'].apply(classificar_produto)
+
+    if 'Produto' in df.columns:
+        df['Tipo Produto'] = df['Produto'].apply(classificar_produto)
+    else:
+        df['Tipo Produto'] = "Consumo"
+
     return df
