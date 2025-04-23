@@ -25,10 +25,15 @@ def gerar_excel(df, nome_abas="Relatorio"):
     output = BytesIO()
     df_export = df.copy()
 
-    # Converter colunas com objetos para string
+    # Tratamento geral de colunas problemáticas
     for col in df_export.columns:
-        if df_export[col].apply(lambda x: isinstance(x, (list, dict, set))).any():
-            df_export[col] = df_export[col].astype(str)
+        if df_export[col].dtype == 'O':  # Object
+            df_export[col] = df_export[col].apply(lambda x: str(x) if not isinstance(x, (int, float, pd.Timestamp)) else x)
+        if pd.api.types.is_datetime64_any_dtype(df_export[col]):
+            df_export[col] = df_export[col].dt.strftime('%d/%m/%Y').fillna('')
+
+    # Garantir que valores NaN sejam vazios
+    df_export = df_export.fillna('')
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df_export.to_excel(writer, index=False, sheet_name=nome_abas[:31])
