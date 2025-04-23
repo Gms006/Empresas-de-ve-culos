@@ -1,17 +1,25 @@
+
 {
   "veiculo_keywords": [
+    "FIAT",
+    "FORD",
+    "VW",
+    "VOLKSWAGEN",
+    "CHEVROLET",
+    "GM",
+    "HONDA",
+    "TOYOTA",
+    "RENAULT",
+    "HYUNDAI",
+    "CITROEN",
+    "NISSAN",
+    "JEEP",
+    "AUTOMOVEL",
     "VEICULO",
-    "VE\u00cdCULO",
     "CARRO",
-    "MOTO",
-    "CAMINH\u00c3O"
+    "PICKUP",
+    "CAMINHONETE",
+    "CAMINHAO"
   ],
-  "blacklist": [
-    "PLACA DE CARRO",
-    "PLACA MOTO",
-    "CARREGADOR",
-    "ETIQUETA",
-    "ADESIVO",
-    "CAIXA"
-  ]
+  "blacklist": []
 }
