@@ -1,4 +1,3 @@
-
 import pandas as pd
 import xml.etree.ElementTree as ET
 import json
@@ -17,9 +16,6 @@ with open(os.path.join(CONFIG_PATH, 'extracao_config.json'), encoding='utf-8') a
 
 with open(os.path.join(CONFIG_PATH, 'layout_colunas.json'), encoding='utf-8') as f:
     LAYOUT_COLUNAS = json.load(f)
-
-with open(os.path.join(CONFIG_PATH, 'classificacao_produto.json'), encoding='utf-8') as f:
-    CLASSIFICACAO_PRODUTO = json.load(f)
 
 # Validações
 def validar_chassi(chassi):
@@ -41,14 +37,11 @@ def classificar_tipo_nota(emitente_cnpj, destinatario_cnpj, cnpj_empresa):
     else:
         return "Saída"
 
-# Classificação Veículo x Consumo
-def classificar_produto(produto):
-    if not produto:
-        return "Consumo"
-    produto_upper = produto.upper()
-    if any(black in produto_upper for black in CLASSIFICACAO_PRODUTO.get("blacklist", [])):
-        return "Consumo"
-    if any(keyword in produto_upper for keyword in CLASSIFICACAO_PRODUTO.get("veiculo_keywords", [])):
+# 🚗 Nova Classificação Veículo x Consumo
+def classificar_produto(row):
+    if row.get('Chassi'):
+        return "Veículo"
+    if row.get('Placa'):
         return "Veículo"
     return "Consumo"
 
@@ -70,11 +63,9 @@ def extrair_dados_xml(xml_path):
 
         registros = []
 
-        # Percorrer todos os produtos <det>
         for item in root.findall('.//nfe:det', ns):
             dados = {col: None for col in LAYOUT_COLUNAS.keys()}
 
-            # Dados gerais replicados
             dados['CFOP'] = cfop
             dados['Data Emissão'] = data_emissao
             dados['Emitente Nome'] = emitente_nome
@@ -83,14 +74,13 @@ def extrair_dados_xml(xml_path):
             dados['Destinatário CNPJ'] = destinatario_cnpj
             dados['Valor Total'] = valor_total
 
-            # Dados específicos do produto
             xProd = item.findtext('.//nfe:prod/nfe:xProd', namespaces=ns) or ""
             infAdProd = item.findtext('.//nfe:prod/nfe:infAdProd', namespaces=ns) or ""
-            produto_completo = f"{xProd} {infAdProd}"
+            produto_completo = f"{xProd} {infAdProd}".strip()
 
             dados['Produto'] = xProd
 
-            # Aplicar regex no texto concatenado
+            # Aplicar regex reforçada no texto do produto
             for campo, padrao in CONFIG_EXTRACAO["regex_extracao"].items():
                 if campo == "Ano Modelo":
                     anos = re.search(padrao, produto_completo, re.IGNORECASE)
@@ -116,7 +106,7 @@ def extrair_dados_xml(xml_path):
         log.error(f"Erro ao processar {xml_path}: {e}")
         return []
 
-# Processar XMLs — Agora consolidando todos os produtos
+# Processar XMLs consolidando todos os produtos
 def processar_xmls(xml_paths, cnpj_empresa):
     todos_registros = []
     for p in xml_paths:
@@ -125,8 +115,7 @@ def processar_xmls(xml_paths, cnpj_empresa):
 
     df = pd.DataFrame(todos_registros)
 
-    # Classificação
-    df['Tipo Nota'] = df.apply(lambda row: classificar_tipo_nota(row['Emitente CNPJ'], row['Destinatário CNPJ'], cnpj_empresa), axis=1)
-    df['Tipo Produto'] = df['Produto'].apply(classificar_produto)
+    df['Tipo Nota'] = df.apply(lambda row: classificar_tipo_nota(row['Emitente CNPJ'], row['Destinatario CNPJ'], cnpj_empresa), axis=1)
+    df['Tipo Produto'] = df.apply(classificar_produto, axis=1)
 
     return df
