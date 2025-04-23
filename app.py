@@ -1,41 +1,96 @@
 import streamlit as st
 import pandas as pd
+import zipfile
+import tempfile
+import os
 from io import BytesIO
 
-# Configuração da página
+from estoque_veiculos import processar_xmls
+from configurador_planilha import configurar_planilha
+from transformadores_veiculos import gerar_estoque_fiscal, gerar_alertas_auditoria, gerar_kpis, gerar_resumo_mensal
+from apuracao_fiscal import calcular_apuracao
+
 st.set_page_config(page_title="Painel Fiscal de Veículos", layout="wide")
+st.title("🚗 Painel Fiscal de Veículos")
 
-# Simulação de dados de estoque
-# Substitua esta parte pelo carregamento real dos dados
-df_estoque = pd.DataFrame({
-    'Chassi': ['ABC123', 'DEF456', 'GHI789'],
-    'Placa': ['XYZ-1234', 'UVW-5678', 'RST-9012'],
-    'Modelo': ['Modelo A', 'Modelo B', 'Modelo C'],
-    'Valor Total': [50000, 60000, 55000],
-    'Data Emissão': ['2025-01-10', '2025-02-15', '2025-03-20'],
-    'Data Saída': ['2025-01-15', '2025-02-20', '2025-03-25'],
-    'CFOP': ['5101', '6101', '1101']
-})
+uploaded_files = st.file_uploader("Envie seus XMLs", type=["xml", "zip"], accept_multiple_files=True)
 
-# Aba: Estoque Fiscal
-st.title("📦 Estoque Fiscal")
+if uploaded_files:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        xml_paths = []
 
-# Exibição do DataFrame
-st.dataframe(df_estoque, use_container_width=True)
+        for file in uploaded_files:
+            filepath = os.path.join(tmpdir, file.name)
+            with open(filepath, "wb") as f:
+                f.write(file.read())
 
-# Criação do botão de download
-def gerar_planilha_excel(df):
-    buffer = BytesIO()
-    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='Estoque Fiscal')
-        writer.close()
-    return buffer.getvalue()
+            if file.name.endswith(".zip"):
+                with zipfile.ZipFile(filepath, "r") as zip_ref:
+                    zip_ref.extractall(tmpdir)
+                    xml_paths += [os.path.join(tmpdir, name) for name in zip_ref.namelist() if name.endswith(".xml")]
+            elif file.name.endswith(".xml"):
+                xml_paths.append(filepath)
 
-excel_data = gerar_planilha_excel(df_estoque)
+        # Processar XMLs e já obter DataFrame padronizado
+        df_extraido = processar_xmls(xml_paths)
 
-st.download_button(
-    label="📥 Baixar Planilha Completa",
-    data=excel_data,
-    file_name="estoque_fiscal.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
+        if df_extraido.empty:
+            st.warning("⚠️ Nenhum dado extraído dos XMLs. Verifique os arquivos enviados.")
+        else:
+            df_configurado = configurar_planilha(df_extraido)
+
+            if 'Tipo Nota' in df_configurado.columns:
+                df_entrada = df_configurado[df_configurado['Tipo Nota'] == 'Entrada'].copy()
+                df_saida = df_configurado[df_configurado['Tipo Nota'] == 'Saída'].copy()
+
+                df_estoque = gerar_estoque_fiscal(df_entrada, df_saida)
+
+                st.sidebar.header("🔎 Diagnóstico de Processamento")
+                st.sidebar.write(f"**Total de Notas Processadas:** {len(df_configurado)}")
+                st.sidebar.write(f"**Notas de Entrada:** {len(df_entrada)}")
+                st.sidebar.write(f"**Notas de Saída:** {len(df_saida)}")
+                st.sidebar.write(f"**Veículos Vendidos:** {df_estoque[df_estoque['Situação'] == 'Vendido'].shape[0]}")
+
+                if df_saida.empty:
+                    st.info("ℹ️ Nenhuma nota de saída detectada. Verifique CFOPs e destinatários.")
+
+                aba = st.tabs(["📦 Estoque", "🕵️ Auditoria", "📈 KPIs e Resumo", "🧾 Apuração Fiscal"])
+
+                with aba[0]:
+                    st.subheader("📦 Estoque Fiscal")
+                    st.dataframe(df_estoque)
+
+                    # Botão para download da planilha completa
+                    buffer = BytesIO()
+                    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+                        df_estoque.to_excel(writer, index=False, sheet_name="Estoque Fiscal")
+                    st.download_button(
+                        label="📥 Baixar Planilha Completa",
+                        data=buffer.getvalue(),
+                        file_name="Estoque_Fiscal_Completo.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+
+                with aba[1]:
+                    st.subheader("🕵️ Relatório de Auditoria")
+                    df_alertas = gerar_alertas_auditoria(df_entrada, df_saida)
+                    st.dataframe(df_alertas)
+
+                with aba[2]:
+                    st.subheader("📊 KPIs")
+                    kpis = gerar_kpis(df_estoque)
+                    st.json(kpis)
+
+                    st.subheader("📅 Resumo Mensal")
+                    df_resumo = gerar_resumo_mensal(df_estoque)
+                    st.dataframe(df_resumo)
+
+                with aba[3]:
+                    st.subheader("🧾 Apuração Fiscal")
+                    df_apuracao, _ = calcular_apuracao(df_estoque)
+                    if df_apuracao.empty:
+                        st.info("ℹ️ Nenhuma venda registrada para apuração.")
+                    else:
+                        st.dataframe(df_apuracao)
+            else:
+                st.error("❌ A coluna 'Tipo Nota' não foi gerada. Verifique a configuração e classificação.")
