@@ -1,8 +1,12 @@
 import pandas as pd
 import json
+import os
+
+# Caminho para a pasta de configurações
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config')
 
 # Carregar Configuração
-with open('config/layout_colunas.json', encoding='utf-8') as f:
+with open(os.path.join(CONFIG_PATH, 'layout_colunas.json'), encoding='utf-8') as f:
     LAYOUT = json.load(f)
 
 def configurar_planilha(df):
