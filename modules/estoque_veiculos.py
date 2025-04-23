@@ -133,6 +133,28 @@ def formatar_data(data_str):
         log.warning(f"Erro ao formatar data '{data_str}': {e}")
     return data_str
 
+# Função para extrair placa com regex melhorada
+def extrair_placa(texto_completo):
+    """Extrai a placa de veículo usando regex especial para tratar os diferentes formatos."""
+    if not texto_completo:
+        return None
+    
+    padrao = CONFIG_EXTRACAO["regex_extracao"].get("Placa")
+    if not padrao:
+        return None
+    
+    match = re.search(padrao, texto_completo, re.IGNORECASE)
+    if not match:
+        return None
+    
+    # Captura os grupos específicos da placa
+    if match.group(2):  # Formato Mercosul
+        return match.group(2).strip()
+    elif match.group(4):  # Formato antigo
+        return match.group(4).strip()
+    else:
+        return None
+
 # Função para encontrar informações adicionais com expressões regulares
 def extrair_info_com_regex(texto_completo, campo):
     """Extrai informações usando regex em um texto."""
@@ -142,6 +164,10 @@ def extrair_info_com_regex(texto_completo, campo):
     padrao = CONFIG_EXTRACAO["regex_extracao"].get(campo)
     if not padrao:
         return None
+    
+    # Caso especial para Placa que tem um padrão mais complexo
+    if campo == "Placa":
+        return extrair_placa(texto_completo)
     
     match = re.search(padrao, texto_completo, re.IGNORECASE)
     if not match:
@@ -178,16 +204,20 @@ def extrair_dados_xml(xml_path):
             log.warning(f"Erro ao obter número da NF: {e}")
             num_nf = "Desconhecido"
 
+        # Extrair dados dos campos XPath do cabeçalho da nota
+        xpath_campos = CONFIG_EXTRACAO.get("xpath_campos", {})
+        
         # Garantir campos do cabeçalho sempre preenchidos
         cabecalho = {
             'Número NF': num_nf,
-            'Emitente Nome': root.findtext('.//nfe:emit/nfe:xNome', namespaces=ns) or 'Não informado',
-            'Emitente CNPJ': normalizar_cnpj(root.findtext('.//nfe:emit/nfe:CNPJ', namespaces=ns)) or 'Não informado',
-            'Destinatario Nome': root.findtext('.//nfe:dest/nfe:xNome', namespaces=ns) or 'Não informado',
-            'Destinatario CNPJ': normalizar_cnpj(root.findtext('.//nfe:dest/nfe:CNPJ', namespaces=ns)) or 'Não informado',
-            'CFOP': root.findtext('.//nfe:det/nfe:prod/nfe:CFOP', namespaces=ns),
-            'Data Emissão': formatar_data(root.findtext('.//nfe:ide/nfe:dhEmi', namespaces=ns)),
-            'Valor Total': root.findtext('.//nfe:total/nfe:ICMSTot/nfe:vNF', namespaces=ns)
+            'Emitente Nome': root.findtext(xpath_campos.get('Emitente Nome', './/nfe:emit/nfe:xNome'), namespaces=ns) or 'Não informado',
+            'Emitente CNPJ': normalizar_cnpj(root.findtext(xpath_campos.get('Emitente CNPJ', './/nfe:emit/nfe:CNPJ'), namespaces=ns)) or 'Não informado',
+            'Destinatario Nome': root.findtext(xpath_campos.get('Destinatario Nome', './/nfe:dest/nfe:xNome'), namespaces=ns) or 'Não informado',
+            'Destinatario CNPJ': normalizar_cnpj(root.findtext(xpath_campos.get('Destinatario CNPJ', './/nfe:dest/nfe:CNPJ'), namespaces=ns)),
+            'Destinatario CPF': normalizar_cnpj(root.findtext(xpath_campos.get('Destinatario CPF', './/nfe:dest/nfe:CPF'), namespaces=ns)),
+            'CFOP': root.findtext(xpath_campos.get('CFOP', './/nfe:det/nfe:prod/nfe:CFOP'), namespaces=ns),
+            'Data Emissão': formatar_data(root.findtext(xpath_campos.get('Data Emissão', './/nfe:ide/nfe:dhEmi'), namespaces=ns)),
+            'Valor Total': root.findtext(xpath_campos.get('Valor Total', './/nfe:total/nfe:ICMSTot/nfe:vNF'), namespaces=ns)
         }
 
         log.debug(f"Cabeçalho extraído: {cabecalho}")
