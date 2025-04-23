@@ -34,8 +34,7 @@ def gerar_excel(df, nome_abas="Relatorio"):
         df_export.to_excel(writer, index=False, sheet_name=nome_abas[:31])
     output.seek(0)
     return output
-
-
+    
 # Upload de arquivos
 uploaded_files = st.file_uploader("📤 Envie seus XMLs ou ZIP", type=["xml", "zip"], accept_multiple_files=True)
 
