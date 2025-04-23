@@ -32,9 +32,9 @@ def validar_placa(placa):
     )
 
 # Classificação Entrada/Saída
-def classificar_tipo_nota(row, cnpj_empresa):
-    emitente = str(row.get('Emitente CNPJ') or "").replace('.', '').replace('/', '').replace('-', '')
-    destinatario = str(row.get('Destinatário CNPJ') or "").replace('.', '').replace('/', '').replace('-', '')
+def classificar_tipo_nota(emitente_cnpj, destinatario_cnpj, cnpj_empresa):
+    emitente = str(emitente_cnpj or "").replace('.', '').replace('/', '').replace('-', '')
+    destinatario = str(destinatario_cnpj or "").replace('.', '').replace('/', '').replace('-', '')
 
     if destinatario == cnpj_empresa:
         return "Entrada"
@@ -52,57 +52,81 @@ def classificar_produto(produto):
         return "Veículo"
     return "Consumo"
 
-# Extração principal
+# Função principal — Extração por Produto
 def extrair_dados_xml(xml_path):
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
         ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
 
-        dados = {col: None for col in LAYOUT_COLUNAS.keys()}
+        # Dados gerais da nota
+        emitente_cnpj = root.findtext('.//nfe:emit/nfe:CNPJ', namespaces=ns)
+        destinatario_cnpj = root.findtext('.//nfe:dest/nfe:CNPJ', namespaces=ns)
+        cfop = root.findtext('.//nfe:det/nfe:prod/nfe:CFOP', namespaces=ns)
+        data_emissao = root.findtext('.//nfe:ide/nfe:dhEmi', namespaces=ns)
+        emitente_nome = root.findtext('.//nfe:emit/nfe:xNome', namespaces=ns)
+        destinatario_nome = root.findtext('.//nfe:dest/nfe:xNome', namespaces=ns)
+        valor_total = root.findtext('.//nfe:total/nfe:ICMSTot/nfe:vNF', namespaces=ns)
 
-        for campo, path in CONFIG_EXTRACAO["xpath_campos"].items():
-            elemento = root.find(path, ns)
-            if campo in dados:
-                dados[campo] = elemento.text.strip() if elemento is not None and elemento.text else None
+        registros = []
 
-        infAdProd_element = root.find('.//nfe:det/nfe:prod/nfe:infAdProd', ns)
-        infAdProd_texto = infAdProd_element.text.strip() if infAdProd_element is not None and infAdProd_element.text else ""
+        # Percorrer todos os produtos <det>
+        for item in root.findall('.//nfe:det', ns):
+            dados = {col: None for col in LAYOUT_COLUNAS.keys()}
 
-        produto_completo = f"{dados.get('Produto', '')} {infAdProd_texto}"
+            # Dados gerais replicados
+            dados['CFOP'] = cfop
+            dados['Data Emissão'] = data_emissao
+            dados['Emitente Nome'] = emitente_nome
+            dados['Emitente CNPJ'] = emitente_cnpj
+            dados['Destinatário Nome'] = destinatario_nome
+            dados['Destinatário CNPJ'] = destinatario_cnpj
+            dados['Valor Total'] = valor_total
 
-        for campo, padrao in CONFIG_EXTRACAO["regex_extracao"].items():
-            if campo == "Ano Modelo":
-                anos = re.search(padrao, produto_completo, re.IGNORECASE)
-                if anos:
-                    dados["Ano Fabricação"] = anos.group(1)
-                    dados["Ano Modelo"] = anos.group(2)
-            else:
-                match = re.search(padrao, produto_completo, re.IGNORECASE)
-                if campo in dados and not dados[campo]:
-                    dados[campo] = match.group(1).strip() if match else None
+            # Dados específicos do produto
+            xProd = item.findtext('.//nfe:prod/nfe:xProd', namespaces=ns) or ""
+            infAdProd = item.findtext('.//nfe:prod/nfe:infAdProd', namespaces=ns) or ""
+            produto_completo = f"{xProd} {infAdProd}"
 
-        if not validar_chassi(dados.get("Chassi")):
-            dados["Chassi"] = None
-        if not validar_placa(dados.get("Placa")):
-            dados["Placa"] = None
+            dados['Produto'] = xProd
 
-        return dados
+            # Aplicar regex no texto concatenado
+            for campo, padrao in CONFIG_EXTRACAO["regex_extracao"].items():
+                if campo == "Ano Modelo":
+                    anos = re.search(padrao, produto_completo, re.IGNORECASE)
+                    if anos:
+                        dados["Ano Fabricação"] = anos.group(1)
+                        dados["Ano Modelo"] = anos.group(2)
+                else:
+                    match = re.search(padrao, produto_completo, re.IGNORECASE)
+                    if campo in dados and not dados[campo]:
+                        dados[campo] = match.group(1).strip() if match else None
+
+            # Validação final
+            if not validar_chassi(dados.get("Chassi")):
+                dados["Chassi"] = None
+            if not validar_placa(dados.get("Placa")):
+                dados["Placa"] = None
+
+            registros.append(dados)
+
+        return registros
 
     except Exception as e:
         log.error(f"Erro ao processar {xml_path}: {e}")
-        return {col: None for col in LAYOUT_COLUNAS.keys()}
+        return []
 
-# Processamento com verificação segura
+# Processar XMLs — Agora consolidando todos os produtos
 def processar_xmls(xml_paths, cnpj_empresa):
-    registros = [extrair_dados_xml(p) for p in xml_paths if p.endswith(".xml")]
-    df = pd.DataFrame(registros)
+    todos_registros = []
+    for p in xml_paths:
+        registros = extrair_dados_xml(p)
+        todos_registros.extend(registros)
 
-    df['Tipo Nota'] = df.apply(lambda row: classificar_tipo_nota(row, cnpj_empresa), axis=1)
+    df = pd.DataFrame(todos_registros)
 
-    if 'Produto' in df.columns:
-        df['Tipo Produto'] = df['Produto'].apply(classificar_produto)
-    else:
-        df['Tipo Produto'] = "Consumo"
+    # Classificação
+    df['Tipo Nota'] = df.apply(lambda row: classificar_tipo_nota(row['Emitente CNPJ'], row['Destinatário CNPJ'], cnpj_empresa), axis=1)
+    df['Tipo Produto'] = df['Produto'].apply(classificar_produto)
 
     return df
