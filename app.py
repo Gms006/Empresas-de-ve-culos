@@ -31,7 +31,6 @@ if uploaded_files:
             elif file.name.endswith(".xml"):
                 xml_paths.append(filepath)
 
-        # Processar XMLs e já obter DataFrame padronizado
         df_extraido = processar_xmls(xml_paths)
 
         if df_extraido.empty:
@@ -60,13 +59,15 @@ if uploaded_files:
                     st.subheader("📦 Estoque Fiscal")
                     st.dataframe(df_estoque)
 
-                    # Botão para download da planilha completa
+                    # Botão de download ajustado
                     buffer = BytesIO()
                     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
                         df_estoque.to_excel(writer, index=False, sheet_name="Estoque Fiscal")
+                    buffer.seek(0)  # Garante que o buffer esteja no início
+
                     st.download_button(
                         label="📥 Baixar Planilha Completa",
-                        data=buffer.getvalue(),
+                        data=buffer,
                         file_name="Estoque_Fiscal_Completo.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
