@@ -30,7 +30,7 @@ def validar_placa(placa):
         re.fullmatch(CONFIG_EXTRACAO["validadores"]["placa_antiga"], placa)
     )
 
-# 🚨 Classificação Entrada/Saída
+# Classificação Entrada/Saída
 def classificar_tipo_nota(row, cnpj_empresa):
     emitente = str(row.get('Emitente CNPJ') or "").replace('.', '').replace('/', '').replace('-', '')
     destinatario = str(row.get('Destinatário CNPJ') or "").replace('.', '').replace('/', '').replace('-', '')
@@ -40,7 +40,7 @@ def classificar_tipo_nota(row, cnpj_empresa):
     else:
         return "Saída"
 
-# 🚗 Classificação Veículo x Consumo
+# Classificação Veículo x Consumo
 def classificar_produto(produto):
     if not produto:
         return "Consumo"
@@ -51,7 +51,7 @@ def classificar_produto(produto):
         return "Veículo"
     return "Consumo"
 
-# Extração Principal
+# Função principal de extração
 def extrair_dados_xml(xml_path):
     try:
         tree = ET.parse(xml_path)
@@ -60,35 +60,32 @@ def extrair_dados_xml(xml_path):
 
         dados = {col: None for col in LAYOUT_COLUNAS.keys()}
 
+        # Extração direta via XPath
         for campo, path in CONFIG_EXTRACAO["xpath_campos"].items():
             elemento = root.find(path, ns)
             if campo in dados:
                 dados[campo] = elemento.text.strip() if elemento is not None and elemento.text else None
 
-        texto_xml = ET.tostring(root, encoding='unicode')
+        # Capturar o conteúdo de <infAdProd>
+        infAdProd_element = root.find('.//nfe:det/nfe:prod/nfe:infAdProd', ns)
+        infAdProd_texto = infAdProd_element.text.strip() if infAdProd_element is not None and infAdProd_element.text else ""
 
-        anos = re.search(CONFIG_EXTRACAO["regex_extracao"]["Ano Modelo"], texto_xml, re.IGNORECASE)
-        if anos:
-            dados["Ano Fabricação"] = anos.group(1)
-            dados["Ano Modelo"] = anos.group(2)
+        # Concatenar Produto + Info Adicional
+        produto_completo = f"{dados.get('Produto', '')} {infAdProd_texto}"
 
+        # Aplicar regex no texto concatenado
         for campo, padrao in CONFIG_EXTRACAO["regex_extracao"].items():
             if campo == "Ano Modelo":
-                continue
-            match = re.search(padrao, texto_xml, re.IGNORECASE)
-            if campo in dados and not dados[campo]:
-                dados[campo] = match.group(1).strip() if match else None
+                anos = re.search(padrao, produto_completo, re.IGNORECASE)
+                if anos:
+                    dados["Ano Fabricação"] = anos.group(1)
+                    dados["Ano Modelo"] = anos.group(2)
+            else:
+                match = re.search(padrao, produto_completo, re.IGNORECASE)
+                if campo in dados and not dados[campo]:
+                    dados[campo] = match.group(1).strip() if match else None
 
-        produto_desc = dados.get("Produto") or ""
-        if not dados.get("Chassi"):
-            chassi_match = re.search(CONFIG_EXTRACAO["regex_extracao"]["Chassi"], produto_desc, re.IGNORECASE)
-            if chassi_match:
-                dados["Chassi"] = chassi_match.group(1).strip()
-        if not dados.get("Placa"):
-            placa_match = re.search(CONFIG_EXTRACAO["regex_extracao"]["Placa"], produto_desc, re.IGNORECASE)
-            if placa_match:
-                dados["Placa"] = placa_match.group(1).strip()
-
+        # Validação final de Chassi e Placa
         if not validar_chassi(dados.get("Chassi")):
             dados["Chassi"] = None
         if not validar_placa(dados.get("Placa")):
@@ -100,7 +97,7 @@ def extrair_dados_xml(xml_path):
         log.error(f"Erro ao processar {xml_path}: {e}")
         return {col: None for col in LAYOUT_COLUNAS.keys()}
 
-# Processar XMLs com classificação completa
+# Processar XMLs
 def processar_xmls(xml_paths, cnpj_empresa):
     registros = [extrair_dados_xml(p) for p in xml_paths if p.endswith(".xml")]
     df = pd.DataFrame(registros)
