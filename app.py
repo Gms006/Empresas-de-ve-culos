@@ -23,10 +23,18 @@ st.markdown("### Upload de XMLs para análise fiscal e auditoria de veículos")
 # Função utilitária para gerar Excel
 def gerar_excel(df, nome_abas="Relatorio"):
     output = BytesIO()
+    df_export = df.copy()
+
+    # Converter colunas com objetos para string
+    for col in df_export.columns:
+        if df_export[col].apply(lambda x: isinstance(x, (list, dict, set))).any():
+            df_export[col] = df_export[col].astype(str)
+
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name=nome_abas[:31])
+        df_export.to_excel(writer, index=False, sheet_name=nome_abas[:31])
     output.seek(0)
     return output
+
 
 # Upload de arquivos
 uploaded_files = st.file_uploader("📤 Envie seus XMLs ou ZIP", type=["xml", "zip"], accept_multiple_files=True)
