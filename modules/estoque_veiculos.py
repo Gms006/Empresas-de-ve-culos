@@ -1,3 +1,4 @@
+
 import pandas as pd
 import xml.etree.ElementTree as ET
 import json
@@ -37,7 +38,7 @@ def classificar_tipo_nota(emitente_cnpj, destinatario_cnpj, cnpj_empresa):
     else:
         return "Saída"
 
-# 🚗 Nova Classificação Veículo x Consumo
+# Classificação Veículo x Consumo
 def classificar_produto(row):
     if row.get('Chassi'):
         return "Veículo"
@@ -45,16 +46,15 @@ def classificar_produto(row):
         return "Veículo"
     return "Consumo"
 
-# Função principal — Extração por Produto
+# Extração por Produto com Garantia de Colunas
 def extrair_dados_xml(xml_path):
     try:
         tree = ET.parse(xml_path)
         root = tree.getroot()
         ns = {'nfe': 'http://www.portalfiscal.inf.br/nfe'}
 
-        # Dados gerais da nota
-        emitente_cnpj = root.findtext('.//nfe:emit/nfe:CNPJ', namespaces=ns)
-        destinatario_cnpj = root.findtext('.//nfe:dest/nfe:CNPJ', namespaces=ns)
+        emitente_cnpj = root.findtext('.//nfe:emit/nfe:CNPJ', namespaces=ns) or 'Não informado'
+        destinatario_cnpj = root.findtext('.//nfe:dest/nfe:CNPJ', namespaces=ns) or 'Não informado'
         cfop = root.findtext('.//nfe:det/nfe:prod/nfe:CFOP', namespaces=ns)
         data_emissao = root.findtext('.//nfe:ide/nfe:dhEmi', namespaces=ns)
         emitente_nome = root.findtext('.//nfe:emit/nfe:xNome', namespaces=ns)
@@ -70,8 +70,8 @@ def extrair_dados_xml(xml_path):
             dados['Data Emissão'] = data_emissao
             dados['Emitente Nome'] = emitente_nome
             dados['Emitente CNPJ'] = emitente_cnpj
-            dados['Destinatário Nome'] = destinatario_nome
-            dados['Destinatário CNPJ'] = destinatario_cnpj
+            dados['Destinatario Nome'] = destinatario_nome
+            dados['Destinatario CNPJ'] = destinatario_cnpj
             dados['Valor Total'] = valor_total
 
             xProd = item.findtext('.//nfe:prod/nfe:xProd', namespaces=ns) or ""
@@ -80,7 +80,6 @@ def extrair_dados_xml(xml_path):
 
             dados['Produto'] = xProd
 
-            # Aplicar regex reforçada no texto do produto
             for campo, padrao in CONFIG_EXTRACAO["regex_extracao"].items():
                 if campo == "Ano Modelo":
                     anos = re.search(padrao, produto_completo, re.IGNORECASE)
@@ -92,7 +91,6 @@ def extrair_dados_xml(xml_path):
                     if campo in dados and not dados[campo]:
                         dados[campo] = match.group(1).strip() if match else None
 
-            # Validação final
             if not validar_chassi(dados.get("Chassi")):
                 dados["Chassi"] = None
             if not validar_placa(dados.get("Placa")):
@@ -106,7 +104,7 @@ def extrair_dados_xml(xml_path):
         log.error(f"Erro ao processar {xml_path}: {e}")
         return []
 
-# Processar XMLs consolidando todos os produtos
+# Processar XMLs com segurança
 def processar_xmls(xml_paths, cnpj_empresa):
     todos_registros = []
     for p in xml_paths:
@@ -114,6 +112,12 @@ def processar_xmls(xml_paths, cnpj_empresa):
         todos_registros.extend(registros)
 
     df = pd.DataFrame(todos_registros)
+
+    # Garantir que as colunas existam
+    if 'Emitente CNPJ' not in df.columns:
+        df['Emitente CNPJ'] = 'Não informado'
+    if 'Destinatario CNPJ' not in df.columns:
+        df['Destinatario CNPJ'] = 'Não informado'
 
     df['Tipo Nota'] = df.apply(lambda row: classificar_tipo_nota(row['Emitente CNPJ'], row['Destinatario CNPJ'], cnpj_empresa), axis=1)
     df['Tipo Produto'] = df.apply(classificar_produto, axis=1)
