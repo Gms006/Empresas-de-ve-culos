@@ -25,20 +25,18 @@ def gerar_excel(df, nome_abas="Relatorio"):
     output = BytesIO()
     df_export = df.copy()
 
-    # Tratamento geral de colunas problemáticas
+    # Converter datas e objetos problemáticos
     for col in df_export.columns:
-        if df_export[col].dtype == 'O':  # Object
-            df_export[col] = df_export[col].apply(lambda x: str(x) if not isinstance(x, (int, float, pd.Timestamp)) else x)
         if pd.api.types.is_datetime64_any_dtype(df_export[col]):
             df_export[col] = df_export[col].dt.strftime('%d/%m/%Y').fillna('')
-
-    # Garantir que valores NaN sejam vazios
-    df_export = df_export.fillna('')
+        elif df_export[col].dtype == 'O':
+            df_export[col] = df_export[col].apply(lambda x: str(x) if pd.notnull(x) else '')
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df_export.to_excel(writer, index=False, sheet_name=nome_abas[:31])
     output.seek(0)
     return output
+
     
 # Upload de arquivos
 uploaded_files = st.file_uploader("📤 Envie seus XMLs ou ZIP", type=["xml", "zip"], accept_multiple_files=True)
