@@ -8,11 +8,13 @@
     "Destinatário Nome": ".//nfe:dest/nfe:xNome",
     "Destinatário CNPJ": ".//nfe:dest/nfe:CNPJ",
     "Destinatário CPF": ".//nfe:dest/nfe:CPF",
-    "Valor Total": ".//nfe:total/nfe:ICMSTot/nfe:vNF"
+    "Valor Total": ".//nfe:total/nfe:ICMSTot/nfe:vNF",
+    "Produto": ".//nfe:det/nfe:prod/nfe:xProd",
+    "tpNF": ".//nfe:ide/nfe:tpNF"
   },
   "regex_extracao": {
     "Chassi": "CHASSI[:\\s]*([A-HJ-NPR-Z0-9]{17})",
-    "Placa": "PLACA[:\\s]*([A-Z]{3}[0-9A-Z][0-9]{2})",
+    "Placa": "(PLACA[:\\s]*([A-Z]{3}[0-9A-Z][0-9]{2}))|(PLACA[:\\s]*([A-Z]{3}-[0-9]{4}))",
     "Renavam": "RENAVAM[:\\s]*([0-9]{9,11})",
     "KM": "KM[:\\s]*([0-9]{1,6})",
     "Ano Modelo": "ANO/MODELO[:\\s]*([0-9]{4})/([0-9]{4})",
