@@ -145,7 +145,7 @@ def classificar_tipo_nota(emitente_cnpj: Optional[str], destinatario_cnpj: Optio
     else:
         # Se não for possível determinar pelo CNPJ, usar uma lógica padrão
         # Vamos considerar como saída em vez de "Indeterminado"
-        log.warning(f"CNPJ não identificado como da empresa: Emitente={emitente}, Destinatario={destinatario}, Empresa={cnpj_empresa}. Classificado como Saída por padrão.")
+        log.warning(f"CNPJ não identificado como da empresa: Emitente={emitente}, Destinatário={destinatario}, Empresa={cnpj_empresa}. Classificado como Saída por padrão.")
         return "Saída"
 
 def classificar_produto(row: Dict[str, Any]) -> str:
