@@ -20,8 +20,7 @@ from modules.transformadores_veiculos import (
     gerar_resumo_mensal
 )
 from modules.apuracao_fiscal import calcular_apuracao
-from modules.Analise import sua_funcao_principal  # Substitua pelo nome da função que você quer usar
-
+from modules.Analise import executar_analise  # 🚨 Novo módulo de análise avançada
 
 # Utilidades
 from utils.filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
@@ -293,7 +292,7 @@ with upload_area:
 
                 # Processar os XMLs
                 if xml_paths:
-                    df_extraido = processar_arquivos(xml_paths, cnpj_empresa)
+                    df_extraido = processar_xmls(xml_paths, cnpj_empresa)
 
                     if df_extraido.empty:
                         st.warning("⚠️ Nenhum dado extraído dos XMLs. Verifique os arquivos enviados.")
@@ -333,6 +332,42 @@ with upload_area:
                                     st.session_state.dados_processados = True
                                     
                                     st.success("✅ XMLs processados com sucesso!")
+                                    
+                                    # Renderizar abas
+                                    abas = st.tabs([
+                                        "📦 Estoque",
+                                        "🕵️ Auditoria",
+                                        "📊 KPIs e Resumo",
+                                        "🧾 Apuração Fiscal",
+                                        "📊 Análise Avançada"  # 🚨 Nova aba
+                                    ])
+
+                                    with abas[0]:
+                                        st.markdown('<div class="sub-header">📦 Estoque Fiscal</div>', unsafe_allow_html=True)
+                                        st.dataframe(df_estoque)
+
+                                    with abas[1]:
+                                        st.markdown('<div class="sub-header">🕵️ Relatório de Auditoria</div>', unsafe_allow_html=True)
+                                        st.dataframe(df_alertas)
+
+                                    with abas[2]:
+                                        st.markdown('<div class="sub-header">📊 KPIs</div>', unsafe_allow_html=True)
+                                        st.json(kpis)
+                                        st.markdown("### 📅 Resumo Mensal")
+                                        st.dataframe(df_resumo)
+
+                                    with abas[3]:
+                                        st.markdown('<div class="sub-header">🧾 Apuração Fiscal</div>', unsafe_allow_html=True)
+                                        if df_apuracao.empty:
+                                            st.info("ℹ️ Nenhuma venda registrada para apuração.")
+                                        else:
+                                            st.dataframe(df_apuracao)
+
+                                    with abas[4]:
+                                        st.markdown('<div class="sub-header">📊 Análise Avançada de Dados</div>', unsafe_allow_html=True)
+                                        if st.button("Executar Análise Personalizada"):
+                                            resultado_analise = executar_analise(df_configurado)
+                                            st.dataframe(resultado_analise)
                             else:
                                 st.error("❌ A coluna 'Tipo Nota' não foi gerada. Verifique a configuração e classificação.")
                         except Exception as e:
