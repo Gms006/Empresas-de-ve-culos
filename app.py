@@ -20,6 +20,8 @@ from modules.transformadores_veiculos import (
     gerar_resumo_mensal
 )
 from modules.apuracao_fiscal import calcular_apuracao
+from modules.Analise import sua_funcao_principal  # Substitua pelo nome da função que você quer usar
+
 
 # Utilidades
 from utils.filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
