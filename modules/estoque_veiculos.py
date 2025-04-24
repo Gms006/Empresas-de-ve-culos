@@ -251,6 +251,30 @@ def extrair_dados_xml(xml_path):
             # Extrair campos básicos do produto
             xProd = item.findtext('.//nfe:prod/nfe:xProd', namespaces=ns) or ""
             infAdProd = item.findtext('.//nfe:infAdProd', namespaces=ns) or ""
+            # Em extrair_dados_xml(), adicione um processamento adicional do campo infAdProd:
+infAdProd = item.findtext('.//nfe:infAdProd', namespaces=ns) or ""
+if infAdProd:
+    # Separa os campos por ponto e vírgula
+    campos = infAdProd.split(';')
+    for campo in campos:
+        if ':' in campo:
+            chave, valor = campo.split(':', 1)
+            chave = chave.strip().upper()
+            valor = valor.strip()
+            
+            if chave == 'PLACA':
+                dados['Placa'] = valor
+            elif chave == 'RENAVAM':
+                dados['Renavam'] = valor
+            elif chave == 'CHASSI':
+                dados['Chassi'] = valor
+            elif chave == 'COR':
+                dados['Cor'] = valor
+            elif 'ANO/MODELO' in chave:
+                anos = valor.split('/')
+                if len(anos) == 2:
+                    dados['Ano Fabricação'] = anos[0].strip()
+                    dados['Ano Modelo'] = anos[1].strip()
             
             # Também procurar em observações adicionais do produto e da NF
             obs_fisco = root.findtext('.//nfe:infAdic/nfe:infAdFisco', namespaces=ns) or ""
