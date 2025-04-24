@@ -20,7 +20,7 @@ from modules.transformadores_veiculos import (
     gerar_resumo_mensal
 )
 from modules.apuracao_fiscal import calcular_apuracao
-from modules.Analise import from modules.Analise import executar_analise
+from modules.Analise import executar_analise
 # Utilidades
 from utils.filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
 from utils.formatador_utils import formatar_moeda, formatar_percentual
