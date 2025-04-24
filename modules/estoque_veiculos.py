@@ -124,28 +124,29 @@ def validar_renavam(renavam: Optional[str]) -> bool:
 def classificar_tipo_nota(emitente_cnpj: Optional[str], destinatario_cnpj: Optional[str], 
                          cnpj_empresa: Optional[str], cfop: Optional[str]) -> str:
     """Classifica a nota como entrada ou saída com base nos CNPJs e CFOP."""
+    # Prioridade 1: Se CFOP começa com 1, 2 ou 3, ou é especificamente 1102 ou 2102, é entrada
+    if cfop:
+        cfop_str = str(cfop)
+        if cfop_str.startswith(('1', '2', '3')) or cfop_str in ['1102', '2102']:
+            return "Entrada"
+        # Se CFOP começa com 5, 6 ou 7, é saída
+        elif cfop_str.startswith(('5', '6', '7')):
+            return "Saída"
+            
+    # Prioridade 2: Usar a lógica baseada em CNPJ
     emitente = normalizar_cnpj(emitente_cnpj)
     destinatario = normalizar_cnpj(destinatario_cnpj)
     cnpj_empresa = normalizar_cnpj(cnpj_empresa)
     
-    # Lista de CFOPs de entrada (começando com 1, 2 ou 3)
-    cfops_entrada = ['1', '2', '3']
-    
-    # Se o CFOP começa com 1, 2 ou 3, é entrada independente dos CNPJs
-    if cfop and any(str(cfop).startswith(prefix) for prefix in cfops_entrada):
-        return "Entrada"
-        
-    # Para outros casos, usar a lógica baseada em CNPJ
-    if not emitente or not destinatario or not cnpj_empresa:
-        return "Indeterminado"
-
     if destinatario == cnpj_empresa:
         return "Entrada"
     elif emitente == cnpj_empresa:
         return "Saída"
     else:
-        log.warning(f"CNPJ não identificado como da empresa: Emitente={emitente}, Destinatário={destinatario}, Empresa={cnpj_empresa}")
-        return "Indeterminado"
+        # Se não for possível determinar pelo CNPJ, usar uma lógica padrão
+        # Vamos considerar como saída em vez de "Indeterminado"
+        log.warning(f"CNPJ não identificado como da empresa: Emitente={emitente}, Destinatario={destinatario}, Empresa={cnpj_empresa}. Classificado como Saída por padrão.")
+        return "Saída"
 
 def classificar_produto(row: Dict[str, Any]) -> str:
     """Classifica o produto como veículo ou consumo."""
