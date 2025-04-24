@@ -122,12 +122,20 @@ def validar_renavam(renavam: Optional[str]) -> bool:
     return bool(pattern.fullmatch(renavam))
 
 def classificar_tipo_nota(emitente_cnpj: Optional[str], destinatario_cnpj: Optional[str], 
-                         cnpj_empresa: Optional[str]) -> str:
-    """Classifica a nota como entrada ou saída com base nos CNPJs."""
+                         cnpj_empresa: Optional[str], cfop: Optional[str]) -> str:
+    """Classifica a nota como entrada ou saída com base nos CNPJs e CFOP."""
     emitente = normalizar_cnpj(emitente_cnpj)
     destinatario = normalizar_cnpj(destinatario_cnpj)
     cnpj_empresa = normalizar_cnpj(cnpj_empresa)
-
+    
+    # Lista de CFOPs de entrada (começando com 1, 2 ou 3)
+    cfops_entrada = ['1', '2', '3']
+    
+    # Se o CFOP começa com 1, 2 ou 3, é entrada independente dos CNPJs
+    if cfop and any(str(cfop).startswith(prefix) for prefix in cfops_entrada):
+        return "Entrada"
+        
+    # Para outros casos, usar a lógica baseada em CNPJ
     if not emitente or not destinatario or not cnpj_empresa:
         return "Indeterminado"
 
@@ -479,7 +487,12 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: str) -> pd.DataFrame:
 
     # Classificação e ajustes finais
     log.info("Aplicando classificações e ajustes finais ao DataFrame")
-    df['Tipo Nota'] = df.apply(lambda row: classificar_tipo_nota(row['Emitente CNPJ'], row['Destinatario CNPJ'], cnpj_empresa), axis=1)
+    df['Tipo Nota'] = df.apply(lambda row: classificar_tipo_nota(
+        row['Emitente CNPJ'], 
+        row['Destinatario CNPJ'], 
+        cnpj_empresa,
+        row.get('CFOP')  # Adicionar CFOP como parâmetro
+    ), axis=1)
     df['Tipo Produto'] = df.apply(classificar_produto, axis=1)
     
     ## Tratamento de tipos de dados conforme especificado no layout_colunas
