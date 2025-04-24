@@ -20,7 +20,7 @@ from modules.transformadores_veiculos import (
     gerar_resumo_mensal
 )
 from modules.apuracao_fiscal import calcular_apuracao
-from modules.Analise import sua_funcao_principal
+from modules.Analise import from modules.Analise import executar_analise
 # Utilidades
 from utils.filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
 from utils.formatador_utils import formatar_moeda, formatar_percentual
@@ -509,7 +509,7 @@ if st.session_state.dados_processados:
         st.markdown('<div class="sub-header">📊 Análise Personalizada de Dados</div>', unsafe_allow_html=True)
         if st.button("Gerar Análise"):
             try:
-                resultado_analise = sua_funcao_principal(st.session_state.df_configurado)
+                resultado_analise = executar_analise(st.session_state.df_configurado)
                 st.dataframe(resultado_analise, use_container_width=True)
             except Exception as e:
                 st.error(f"Erro ao executar análise avançada: {e}")
