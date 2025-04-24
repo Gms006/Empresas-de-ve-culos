@@ -20,7 +20,7 @@ from modules.transformadores_veiculos import (
     gerar_resumo_mensal
 )
 from modules.apuracao_fiscal import calcular_apuracao
-from modules import analise
+
 # Utilidades
 from utils.filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
 from utils.formatador_utils import formatar_moeda, formatar_percentual
@@ -369,13 +369,7 @@ if st.session_state.dados_processados:
         """, unsafe_allow_html=True)
     
     # Tabs para diferentes relatórios
-    abas = st.tabs([
-        "📦 Estoque", 
-        "🕵️ Auditoria", 
-        "📈 KPIs e Resumo", 
-        "🧾 Apuração Fiscal",
-        "📊 Análise Avançada"  # Nova aba
-    ])
+    abas = st.tabs(["📦 Estoque", "🕵️ Auditoria", "📈 KPIs e Resumo", "🧾 Apuração Fiscal"])
     
     with abas[0]:
         st.markdown('<div class="sub-header">📦 Estoque Fiscal</div>', unsafe_allow_html=True)
@@ -505,15 +499,6 @@ if st.session_state.dados_processados:
         else:
             st.info("Sem dados de apuração fiscal para mostrar.")
     
-    with abas[4]:
-        st.markdown('<div class="sub-header">📊 Análise Personalizada de Dados</div>', unsafe_allow_html=True)
-        if st.button("Gerar Análise"):
-            try:
-                resultado_analise = executar_analise(st.session_state.df_configurado)
-                st.dataframe(resultado_analise, use_container_width=True)
-            except Exception as e:
-                st.error(f"Erro ao executar análise avançada: {e}")
-
     # Download de todos os dados
     st.markdown('<div class="sub-header">📥 Baixar Dados Completos</div>', unsafe_allow_html=True)
     
