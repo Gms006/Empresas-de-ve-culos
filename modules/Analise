@@ -1,536 +1,839 @@
-import streamlit as st
 import pandas as pd
-import zipfile
-import tempfile
+import numpy as np
+import logging
 import os
+import yaml
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 import json
-import time
-from io import BytesIO
-from concurrent.futures import ThreadPoolExecutor
-import matplotlib.pyplot as plt
-import seaborn as sns
 
-# Importações dos módulos
-from modules.estoque_veiculos import processar_xmls
-from modules.configurador_planilha import configurar_planilha
-from modules.transformadores_veiculos import (
-    gerar_estoque_fiscal,
-    gerar_alertas_auditoria,
-    gerar_kpis,
-    gerar_resumo_mensal
+# Configuração de logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('apuracao_fiscal.log'),
+        logging.StreamHandler()
+    ]
 )
-from modules.apuracao_fiscal import calcular_apuracao
-from modules.Analise import sua_funcao_principal  # Substitua pelo nome da função que você quer usar
+logger = logging.getLogger('apuracao_fiscal')
 
+# Constantes e configurações
+CONFIG_FILE = 'config_fiscal.yaml'
 
-# Utilidades
-from utils.filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
-from utils.formatador_utils import formatar_moeda, formatar_percentual
-
-# Configuração da página
-st.set_page_config(
-    page_title="Painel Fiscal de Veículos", 
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Estilo personalizado
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 32px;
-        font-weight: bold;
-        color: #1E3A8A;
-        margin-bottom: 20px;
-    }
-    .sub-header {
-        font-size: 24px;
-        font-weight: bold;
-        color: #2563EB;
-        margin-top: 15px;
-        margin-bottom: 10px;
-    }
-    .card {
-        padding: 20px;
-        border-radius: 10px;
-        background-color: #F3F4F6;
-        margin-bottom: 20px;
-    }
-    .info-card {
-        padding: 15px;
-        border-radius: 8px;
-        background-color: #E0F2FE;
-        border-left: 4px solid #0284C7;
-        margin-bottom: 15px;
-    }
-    .warning-card {
-        padding: 15px;
-        border-radius: 8px;
-        background-color: #FEF3C7;
-        border-left: 4px solid #D97706;
-        margin-bottom: 15px;
-    }
-    .success-card {
-        padding: 15px;
-        border-radius: 8px;
-        background-color: #D1FAE5;
-        border-left: 4px solid #059669;
-        margin-bottom: 15px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Título principal
-st.markdown('<div class="main-header">🚗 Painel Fiscal de Veículos</div>', unsafe_allow_html=True)
-
-# Inicialização de estado da sessão
-if 'dados_processados' not in st.session_state:
-    st.session_state.dados_processados = False
-if 'df_configurado' not in st.session_state:
-    st.session_state.df_configurado = None
-if 'df_estoque' not in st.session_state:
-    st.session_state.df_estoque = None
-if 'df_alertas' not in st.session_state:
-    st.session_state.df_alertas = None
-if 'df_resumo' not in st.session_state:
-    st.session_state.df_resumo = None
-if 'df_apuracao' not in st.session_state:
-    st.session_state.df_apuracao = None
-if 'kpis' not in st.session_state:
-    st.session_state.kpis = None
-
-# Configuração da sidebar
-with st.sidebar:
-    st.markdown('<div class="sub-header">⚙️ Configurações</div>', unsafe_allow_html=True)
-
-    # 🔹 Seleção da Empresa
+def carregar_configuracoes(arquivo=CONFIG_FILE):
+    """Carrega configurações fiscais de arquivo externo."""
     try:
-        with open('config/empresas_config.json', encoding='utf-8') as f:
-            empresas = json.load(f)
+        if os.path.exists(arquivo):
+            with open(arquivo, 'r', encoding='utf-8') as file:
+                return yaml.safe_load(file)
+        else:
+            # Configurações padrão
+            config_padrao = {
+                'aliquotas': {
+                    'icms': {
+                        'revenda_veiculos': 0.19,
+                        'revenda_pecas': 0.20,
+                    },
+                    'pis_cofins': 0.0365,  # Soma de PIS (0,65%) e COFINS (3%)
+                    'irpj': {
+                        'aliquota_base': 0.15,
+                        'adicional': 0.10,
+                        'limite_trimestral': 60000
+                    },
+                    'csll': 0.09,
+                    'presuncao_lucro': {
+                        'revenda_veiculos': 0.32,
+                        'revenda_pecas': 0.38,
+                        'servicos': 0.32
+                    }
+                },
+                'regras_especificas': {
+                    'icms_st_aliquota': 0.12,
+                    'margem_valor_agregado': 0.30,
+                    'considerar_icms_st': True
+                }
+            }
+            # Salva configurações padrão
+            with open(arquivo, 'w', encoding='utf-8') as file:
+                yaml.dump(config_padrao, file, default_flow_style=False)
+            logger.info(f"Arquivo de configuração criado: {arquivo}")
+            return config_padrao
     except Exception as e:
-        st.error(f"Erro ao carregar configuração de empresas: {e}")
-        empresas = {}
+        logger.error(f"Erro ao carregar configurações: {e}")
+        raise
 
-    opcoes_empresas = {v['nome']: k for k, v in empresas.items()}
+def validar_dados(df):
+    """Valida e limpa o DataFrame de entrada."""
+    if df is None or df.empty:
+        raise ValueError("DataFrame vazio ou nulo fornecido")
     
-    if not opcoes_empresas:
-        st.warning("Nenhuma empresa configurada. Por favor, adicione empresas ao arquivo config/empresas_config.json")
-        empresa_selecionada_nome = None
-        chave_empresa = None
-        cnpj_empresa = None
+    # Verificar colunas necessárias
+    colunas_necessarias = [
+        'Situação', 'Data Saída', 'Lucro', 'Valor Venda', 
+        'Valor Custo', 'Tipo Veículo', 'CNPJ/CPF Cliente'
+    ]
+    
+    colunas_faltantes = [col for col in colunas_necessarias if col not in df.columns]
+    if colunas_faltantes:
+        # Tentar mapear nomes de colunas semelhantes
+        mapeamento_sugerido = {}
+        for col_faltante in colunas_faltantes:
+            if col_faltante == 'Data Saída' and 'Data Venda' in df.columns:
+                mapeamento_sugerido['Data Venda'] = 'Data Saída'
+            elif col_faltante == 'Valor Venda' and 'Preço Venda' in df.columns:
+                mapeamento_sugerido['Preço Venda'] = 'Valor Venda'
+            elif col_faltante == 'Tipo Veículo' and 'Categoria' in df.columns:
+                mapeamento_sugerido['Categoria'] = 'Tipo Veículo'
+        
+        if mapeamento_sugerido:
+            df = df.rename(columns=mapeamento_sugerido)
+            colunas_faltantes = [col for col in colunas_necessarias if col not in df.columns]
+            logger.info(f"Colunas mapeadas automaticamente: {mapeamento_sugerido}")
+        
+        if colunas_faltantes:
+            raise ValueError(f"Colunas necessárias não encontradas: {', '.join(colunas_faltantes)}")
+    
+    # Converter e limpar dados
+    df_limpo = df.copy()
+    
+    # Tratamento de datas
+    if 'Data Saída' in df_limpo.columns:
+        df_limpo['Data Saída'] = pd.to_datetime(df_limpo['Data Saída'], errors='coerce')
+        # Identificar linhas com datas inválidas
+        linhas_invalidas = df_limpo['Data Saída'].isna()
+        if linhas_invalidas.any():
+            logger.warning(f"Encontradas {linhas_invalidas.sum()} linhas com datas inválidas")
+    
+    # Tratamento de valores numéricos
+    for coluna in ['Lucro', 'Valor Venda', 'Valor Custo']:
+        if coluna in df_limpo.columns:
+            df_limpo[coluna] = pd.to_numeric(df_limpo[coluna], errors='coerce').fillna(0)
+    
+    # Validar situação do veículo
+    if 'Situação' in df_limpo.columns:
+        situacoes_validas = ['Vendido', 'Em Estoque', 'Reservado']
+        situacoes_invalidas = df_limpo[~df_limpo['Situação'].isin(situacoes_validas)]['Situação'].unique()
+        if len(situacoes_invalidas) > 0:
+            logger.warning(f"Encontradas situações não padrão: {', '.join(situacoes_invalidas)}")
+    
+    # Verificar se há lucro calculado corretamente
+    if 'Lucro' in df_limpo.columns and 'Valor Venda' in df_limpo.columns and 'Valor Custo' in df_limpo.columns:
+        # Calcular lucro esperado
+        lucro_esperado = df_limpo['Valor Venda'] - df_limpo['Valor Custo']
+        # Comparar com lucro informado
+        diferenca = (df_limpo['Lucro'] - lucro_esperado).abs()
+        if (diferenca > 0.1).any():  # Tolerância de 10 centavos para arredondamentos
+            logger.warning(f"Encontradas {(diferenca > 0.1).sum()} linhas com lucro inconsistente")
+            # Corrigir automaticamente
+            df_limpo['Lucro'] = lucro_esperado
+            logger.info("Lucro recalculado automaticamente")
+    
+    return df_limpo
+
+def classificar_operacoes(df):
+    """Classifica operações para aplicar alíquotas corretas."""
+    df = df.copy()
+    
+    # Classificar tipo de veículo se existir a coluna
+    if 'Tipo Veículo' in df.columns:
+        # Padronizar nomes para minúsculo e sem acentos
+        df['Tipo Veículo'] = df['Tipo Veículo'].str.lower().str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8')
+        
+        # Criar categorias fiscais
+        condicoes = [
+            df['Tipo Veículo'].str.contains('caminhao|caminhão|truck|carreta|reboque'),
+            df['Tipo Veículo'].str.contains('moto|motocicleta|scooter'),
+            df['Tipo Veículo'].str.contains('onibus|ônibus|van|micro'),
+            df['Tipo Veículo'].str.contains('importado|import')
+        ]
+        
+        categorias = [
+            'veiculos_pesados',
+            'motocicletas',
+            'transporte_coletivo',
+            'importados'
+        ]
+        
+        df['Categoria Fiscal'] = np.select(condicoes, categorias, default='veiculos_passeio')
     else:
-        empresa_selecionada_nome = st.selectbox("🏢 Selecione a Empresa", options=opcoes_empresas.keys())
-        chave_empresa = opcoes_empresas[empresa_selecionada_nome]
-        cnpj_empresa = empresas[chave_empresa]['cnpj_emitentes'][0]
-        st.markdown(f"**CNPJ Selecionado:** `{cnpj_empresa}`")
-
-    # Botão para limpar dados
-    if st.session_state.dados_processados:
-        if st.button("🗑️ Limpar Dados Processados"):
-            st.session_state.dados_processados = False
-            st.session_state.df_configurado = None
-            st.session_state.df_estoque = None
-            st.session_state.df_alertas = None
-            st.session_state.df_resumo = None
-            st.session_state.df_apuracao = None
-            st.session_state.kpis = None
-            st.success("Dados limpos com sucesso!")
-            st.experimental_rerun()
-
-    # Sobre o projeto
-    st.markdown("---")
-    st.markdown("### 📌 Sobre")
-    st.markdown("""
-    Esta aplicação analisa XMLs de notas fiscais para geração de:
+        # Categoria padrão se não houver informação
+        df['Categoria Fiscal'] = 'veiculos_passeio'
     
-    - Controle de estoque fiscal
-    - Análise de entrada/saída
-    - Cálculo tributário
-    - Relatórios gerenciais
-    """)
-
-# Função utilitária para gerar Excel
-def gerar_excel(df, nome_abas="Relatorio"):
-    output = BytesIO()
-    df_export = df.copy()
-
-    # Conversão segura de tipos de dados
-    for col in df_export.columns:
-        if pd.api.types.is_datetime64_any_dtype(df_export[col]):
-            df_export[col] = df_export[col].dt.strftime('%d/%m/%Y').fillna('')
-        elif df_export[col].dtype == 'object':  # Usando object em vez de 'O'
-            df_export[col] = df_export[col].apply(lambda x: str(x) if pd.notnull(x) else '')
-        elif df_export[col].name.lower().startswith(('valor', 'lucro', 'total')):
-            # Formatar colunas monetárias
-            df_export[col] = pd.to_numeric(df_export[col], errors='coerce').fillna(0)
-
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df_export.to_excel(writer, index=False, sheet_name=nome_abas[:31])
-        
-        # Formatar colunas
-        workbook = writer.book
-        worksheet = writer.sheets[nome_abas[:31]]
-        
-        # Formato monetário
-        formato_moeda = workbook.add_format({'num_format': 'R$ #,##0.00'})
-        
-        # Aplicar formatos por tipo de coluna
-        for i, col in enumerate(df_export.columns):
-            col_lower = col.lower()
-            if any(termo in col_lower for termo in ['valor', 'lucro', 'total']):
-                worksheet.set_column(i, i, 15, formato_moeda)
-            elif 'data' in col_lower:
-                worksheet.set_column(i, i, 12)
-            else:
-                worksheet.set_column(i, i, 18)
-        
-    output.seek(0)
-    return output
-
-# Função para processar os arquivos com feedback de progresso
-def processar_arquivos(xml_paths, cnpj_empresa):
-    total_arquivos = len(xml_paths)
-    progresso = st.progress(0)
-    status_text = st.empty()
-    
-    if total_arquivos > 0:
-        # Processar em lotes para melhorar desempenho com muitos arquivos
-        resultados = []
-        
-        # Criar lotes de 100 arquivos para processamento
-        lote_size = min(100, total_arquivos)
-        for i in range(0, total_arquivos, lote_size):
-            lote = xml_paths[i:i+lote_size]
-            
-            # Processar lote de arquivos
-            with ThreadPoolExecutor() as executor:
-                lote_resultados = processar_xmls(lote, cnpj_empresa)
-                resultados.append(lote_resultados)
-                
-            # Atualizar progresso
-            progresso.progress(min((i+lote_size)/total_arquivos, 1.0))
-            status_text.text(f"Processando {min(i+lote_size, total_arquivos)} de {total_arquivos} arquivos...")
-            time.sleep(0.1)  # Pequena pausa para atualização visual
-        
-        # Consolidar resultados
-        df_final = pd.concat(resultados, ignore_index=True) if resultados else pd.DataFrame()
-        
-        status_text.text("Processamento concluído!")
-        progresso.progress(1.0)
-        time.sleep(1)
-        status_text.empty()
-        progresso.empty()
-        
-        return df_final
+    # Classificar tipo de operação (interestadual ou interna)
+    if 'UF Cliente' in df.columns and 'UF Empresa' in df.columns:
+        df['Operação'] = np.where(df['UF Cliente'] == df['UF Empresa'], 'interna', 'interestadual')
     else:
-        status_text.text("Nenhum arquivo para processar")
-        time.sleep(1)
-        status_text.empty()
-        progresso.empty()
-        return pd.DataFrame()
+        df['Operação'] = 'interna'  # Padrão
+    
+    return df
 
-# Função para criar gráficos
-def criar_grafico_resumo(df_resumo):
-    fig, ax = plt.subplots(figsize=(10, 5))
+def calcular_icms_st(df, config):
+    """Calcula ICMS-ST se aplicável."""
+    if not config['regras_especificas']['considerar_icms_st']:
+        return df
     
-    # Configurar data para plotagem
-    df_temp = df_resumo.copy()
-    if 'Mês' in df_temp.columns:
-        df_temp['Mês'] = pd.to_datetime(df_temp['Mês']).dt.strftime('%b/%Y')
+    df = df.copy()
     
-    # Plotar gráfico de barras
-    sns.set_style('whitegrid')
-    ax = sns.barplot(x='Mês', y='Lucro', data=df_temp, color='#1F77B4')
+    # Base de cálculo do ICMS-ST (valor da operação + IPI + frete + outras despesas + MVA)
+    mva = config['regras_especificas']['margem_valor_agregado']
     
-    # Adicionar linha de tendência
-    ax2 = ax.twinx()
-    sns.lineplot(x=range(len(df_temp)), y='Valor Venda', data=df_temp, 
-                 marker='o', color='#FF7F0E', ax=ax2)
-    
-    # Configurações do gráfico
-    ax.set_title('Resumo Mensal de Vendas e Lucro', fontsize=16)
-    ax.set_xlabel('Período', fontsize=12)
-    ax.set_ylabel('Lucro (R$)', fontsize=12)
-    ax2.set_ylabel('Valor de Venda (R$)', fontsize=12)
-    
-    ax.tick_params(axis='x', rotation=45)
-    
-    # Ajustar layout
-    plt.tight_layout()
-    return fig
-
-# Upload de arquivos XML ou ZIP
-upload_area = st.container()
-with upload_area:
-    st.markdown('<div class="sub-header">📤 Upload de Arquivos</div>', unsafe_allow_html=True)
-    
-    if not cnpj_empresa:
-        st.warning("Selecione uma empresa antes de fazer upload de arquivos")
-        st.stop()
-    
-    uploaded_files = st.file_uploader("Envie seus XMLs ou ZIP", type=["xml", "zip"], accept_multiple_files=True)
-
-    if uploaded_files:
-        with st.spinner("Processando arquivos..."):
-            with tempfile.TemporaryDirectory() as tmpdir:
-                xml_paths = []
-
-                # Processar os arquivos enviados
-                for file in uploaded_files:
-                    filepath = os.path.join(tmpdir, file.name)
-                    with open(filepath, "wb") as f:
-                        f.write(file.read())
-
-                    if file.name.lower().endswith(".zip"):
-                        try:
-                            with zipfile.ZipFile(filepath, "r") as zip_ref:
-                                zip_ref.extractall(tmpdir)
-                                xml_paths += [os.path.join(tmpdir, name) for name in zip_ref.namelist() if name.lower().endswith(".xml")]
-                        except Exception as e:
-                            st.error(f"Erro ao extrair arquivo ZIP {file.name}: {e}")
-                    elif file.name.lower().endswith(".xml"):
-                        xml_paths.append(filepath)
-
-                # Processar os XMLs
-                if xml_paths:
-                    df_extraido = processar_arquivos(xml_paths, cnpj_empresa)
-
-                    if df_extraido.empty:
-                        st.warning("⚠️ Nenhum dado extraído dos XMLs. Verifique os arquivos enviados.")
-                    else:
-                        try:
-                            # Configurar planilha
-                            df_configurado = configurar_planilha(df_extraido)
-                            st.session_state.df_configurado = df_configurado
-                            
-                            # Processar dados
-                            if 'Tipo Nota' in df_configurado.columns:
-                                df_entrada = df_configurado[df_configurado['Tipo Nota'] == 'Entrada'].copy()
-                                df_saida = df_configurado[df_configurado['Tipo Nota'] == 'Saída'].copy()
-                                
-                                with st.spinner("Gerando relatórios..."):
-                                    # Estoque fiscal
-                                    df_estoque = gerar_estoque_fiscal(df_entrada, df_saida)
-                                    st.session_state.df_estoque = df_estoque
-                                    
-                                    # Alertas de auditoria
-                                    df_alertas = gerar_alertas_auditoria(df_entrada, df_saida)
-                                    st.session_state.df_alertas = df_alertas
-                                    
-                                    # KPIs
-                                    kpis = gerar_kpis(df_estoque)
-                                    st.session_state.kpis = kpis
-                                    
-                                    # Resumo mensal
-                                    df_resumo = gerar_resumo_mensal(df_estoque)
-                                    st.session_state.df_resumo = df_resumo
-                                    
-                                    # Apuração fiscal
-                                    df_apuracao, _ = calcular_apuracao(df_estoque)
-                                    st.session_state.df_apuracao = df_apuracao
-                                    
-                                    # Marcar dados como processados
-                                    st.session_state.dados_processados = True
-                                    
-                                    st.success("✅ XMLs processados com sucesso!")
-                            else:
-                                st.error("❌ A coluna 'Tipo Nota' não foi gerada. Verifique a configuração e classificação.")
-                        except Exception as e:
-                            st.error(f"Erro ao processar dados: {e}")
-                else:
-                    st.warning("⚠️ Nenhum arquivo XML encontrado nos arquivos enviados.")
-
-# Renderizar resultados se houver dados processados
-if st.session_state.dados_processados:
-    # Mostrar KPIs em cards
-    st.markdown('<div class="sub-header">📊 Indicadores Principais</div>', unsafe_allow_html=True)
-    
-    kpi_cols = st.columns(3)
-    with kpi_cols[0]:
-        st.markdown(f"""
-        <div class="card">
-            <h3>Total Vendido</h3>
-            <h2>{formatar_moeda(st.session_state.kpis["Total Vendido (R$)"])}</h2>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with kpi_cols[1]:
-        st.markdown(f"""
-        <div class="card">
-            <h3>Lucro Total</h3>
-            <h2>{formatar_moeda(st.session_state.kpis["Lucro Total (R$)"])}</h2>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with kpi_cols[2]:
-        st.markdown(f"""
-        <div class="card">
-            <h3>Estoque Atual</h3>
-            <h2>{formatar_moeda(st.session_state.kpis["Estoque Atual (R$)"])}</h2>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Tabs para diferentes relatórios
-    abas = st.tabs([
-        "📦 Estoque", 
-        "🕵️ Auditoria", 
-        "📈 KPIs e Resumo", 
-        "🧾 Apuração Fiscal",
-        "📊 Análise Avançada"  # Nova aba
-    ])
-    
-    with abas[0]:
-        st.markdown('<div class="sub-header">📦 Estoque Fiscal</div>', unsafe_allow_html=True)
+    # Verificar se tem coluna de valor de venda
+    if 'Valor Venda' in df.columns:
+        # Cálculo simplificado para demonstração
+        df['Base ICMS-ST'] = df['Valor Venda'] * (1 + mva)
         
-        # Filtros de data para estoque
-        if 'Data Emissão_entrada' in st.session_state.df_estoque.columns:
-            filtro_cols = st.columns(3)
-            with filtro_cols[0]:
-                anos_disponiveis = sorted(pd.to_datetime(
-                    st.session_state.df_estoque['Data Emissão_entrada']).dt.year.unique().tolist())
-                ano_selecionado = st.selectbox("Ano", [None] + anos_disponiveis, key="estoque_ano")
-            
-            with filtro_cols[1]:
-                meses_disponiveis = list(range(1, 13))
-                mes_selecionado = st.selectbox("Mês", [None] + meses_disponiveis, key="estoque_mes")
-                
-            with filtro_cols[2]:
-                situacao_opcoes = ['Todos', 'Em Estoque', 'Vendido']
-                situacao_selecionada = st.selectbox("Situação", situacao_opcoes, key="estoque_situacao")
-            
-            # Aplicar filtros
-            df_estoque_filtrado = st.session_state.df_estoque.copy()
-            
-            if ano_selecionado:
-                df_estoque_filtrado = df_estoque_filtrado[
-                    pd.to_datetime(df_estoque_filtrado['Data Emissão_entrada']).dt.year == ano_selecionado]
-            
-            if mes_selecionado:
-                df_estoque_filtrado = df_estoque_filtrado[
-                    pd.to_datetime(df_estoque_filtrado['Data Emissão_entrada']).dt.month == mes_selecionado]
-                
-            if situacao_selecionada != 'Todos':
-                df_estoque_filtrado = df_estoque_filtrado[df_estoque_filtrado['Situação'] == situacao_selecionada]
+        # ICMS normal
+        aliquota_icms = config['aliquotas']['icms']['revenda_veiculos']
+        df['ICMS Normal'] = df['Valor Venda'] * aliquota_icms
+        
+        # ICMS-ST
+        aliquota_st = config['regras_especificas']['icms_st_aliquota']
+        df['ICMS-ST'] = (df['Base ICMS-ST'] * aliquota_st) - df['ICMS Normal']
+        
+        # Garantir que ICMS-ST não seja negativo
+        df['ICMS-ST'] = df['ICMS-ST'].clip(lower=0)
+    
+    return df
+
+def calcular_tributos(df, config, periodo=None):
+    """Calcula tributos com base nas configurações fornecidas."""
+    df = df.copy()
+    
+    # Filtrar por período se especificado
+    if periodo:
+        if isinstance(periodo, tuple) and len(periodo) == 2:
+            inicio, fim = periodo
+            df = df[(df['Data Saída'] >= inicio) & (df['Data Saída'] <= fim)]
         else:
-            df_estoque_filtrado = st.session_state.df_estoque
-        
-        # Mostrar tabela de estoque
-        st.dataframe(df_estoque_filtrado, use_container_width=True)
-        
-        # Botão para download
-        st.download_button(
-            label="📥 Baixar Estoque",
-            data=gerar_excel(df_estoque_filtrado, "Estoque"),
-            file_name="Estoque.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            logger.warning("Formato de período inválido. Usando todos os dados.")
     
-    with abas[1]:
-        st.markdown('<div class="sub-header">🕵️ Relatório de Auditoria</div>', unsafe_allow_html=True)
-        
-        if not st.session_state.df_alertas.empty:
-            st.dataframe(st.session_state.df_alertas, use_container_width=True)
-            
-            # Mostrar alertas críticos
-            alertas_criticos = st.session_state.df_alertas.shape[0]
-            st.markdown(f"""
-            <div class="warning-card">
-                <h3>⚠️ {alertas_criticos} alertas identificados</h3>
-                <p>Verifique possíveis inconsistências nos dados fiscais.</p>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-            <div class="success-card">
-                <h3>✅ Sem alertas de auditoria</h3>
-                <p>Os dados fiscais analisados não apresentam inconsistências.</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        st.download_button(
-            label="📥 Baixar Relatório de Auditoria",
-            data=gerar_excel(st.session_state.df_alertas, "Auditoria"),
-            file_name="Auditoria.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    # Filtrar apenas veículos vendidos
+    df_vendidos = df[df["Situação"] == "Vendido"].copy()
     
-    with abas[2]:
-        st.markdown('<div class="sub-header">📊 KPIs e Resumo Mensal</div>', unsafe_allow_html=True)
-        
-        # Mostrar gráfico de resumo mensal
-        if not st.session_state.df_resumo.empty:
-            grafico = criar_grafico_resumo(st.session_state.df_resumo)
-            st.pyplot(grafico)
-            
-            # Mostrar tabela de resumo mensal
-            st.markdown("### 📅 Resumo Mensal")
-            st.dataframe(st.session_state.df_resumo, use_container_width=True)
-            
-            st.download_button(
-                label="📥 Baixar Resumo Mensal",
-                data=gerar_excel(st.session_state.df_resumo, "Resumo"),
-                file_name="Resumo_Mensal.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        else:
-            st.info("Sem dados de resumo mensal para mostrar.")
+    if df_vendidos.empty:
+        logger.warning("Nenhum veículo vendido encontrado no período")
+        return pd.DataFrame(), df_vendidos
     
-    with abas[3]:
-        st.markdown('<div class="sub-header">🧾 Apuração Fiscal</div>', unsafe_allow_html=True)
-        
-        if not st.session_state.df_apuracao.empty:
-            # Mostrar tabela de apuração fiscal
-            st.dataframe(st.session_state.df_apuracao, use_container_width=True)
-            
-            # Explicação do cálculo
-            st.markdown("""
-            <div class="info-card">
-                <h3>📝 Como funciona o cálculo fiscal</h3>
-                <p>A apuração fiscal é calculada com base nos seguintes parâmetros:</p>
-                <ul>
-                    <li>ICMS Presumido: 19% sobre o lucro</li>
-                    <li>PIS/COFINS Presumido: 3,65% sobre o lucro</li>
-                    <li>Base IRPJ/CSLL: 32% sobre o lucro</li>
-                    <li>IRPJ: 15% sobre a base</li>
-                    <li>Adicional IRPJ: 10% sobre o que exceder R$ 60.000 por trimestre</li>
-                    <li>CSLL: 9% sobre a base</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.download_button(
-                label="📥 Baixar Apuração Fiscal",
-                data=gerar_excel(st.session_state.df_apuracao, "Apuracao"),
-                file_name="Apuracao_Fiscal.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        else:
-            st.info("Sem dados de apuração fiscal para mostrar.")
+    # Adicionar trimestre para cálculos do IRPJ/CSLL
+    df_vendidos["Trimestre"] = df_vendidos["Data Saída"].dt.to_period("Q")
+    df_vendidos["Trimestre_Texto"] = df_vendidos["Trimestre"].dt.strftime("%Y-T%q")
     
-    with abas[4]:
-        st.markdown('<div class="sub-header">📊 Análise Personalizada de Dados</div>', unsafe_allow_html=True)
-        if st.button("Gerar Análise"):
-            try:
-                resultado_analise = sua_funcao_principal(st.session_state.df_configurado)
-                st.dataframe(resultado_analise, use_container_width=True)
-            except Exception as e:
-                st.error(f"Erro ao executar análise avançada: {e}")
-
-    # Download de todos os dados
-    st.markdown('<div class="sub-header">📥 Baixar Dados Completos</div>', unsafe_allow_html=True)
+    # Adicionar mês para cálculos mensais como PIS/COFINS
+    df_vendidos["Mês"] = df_vendidos["Data Saída"].dt.to_period("M")
+    df_vendidos["Mês_Texto"] = df_vendidos["Data Saída"].dt.strftime("%Y-%m")
     
-    st.download_button(
-        label="📥 Baixar Planilha Completa",
-        data=gerar_excel(st.session_state.df_configurado, "Extracao_Completa"),
-        file_name="Extracao_Completa.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    # Alíquotas base
+    aliquota_pis_cofins = config['aliquotas']['pis_cofins']
+    
+    # Calcular tributos por linha
+    # PIS/COFINS - mensal - regime não-cumulativo para revenda
+    df_vendidos["PIS/COFINS"] = df_vendidos["Lucro"] * aliquota_pis_cofins
+    
+    # Aplicar alíquotas específicas por categoria de veículo para ICMS
+    df_vendidos["ICMS"] = df_vendidos["Lucro"] * config['aliquotas']['icms']['revenda_veiculos']
+    
+    # Base de cálculo para IRPJ/CSLL - varia conforme atividade
+    df_vendidos["Base IRPJ/CSLL"] = df_vendidos["Lucro"] * config['aliquotas']['presuncao_lucro']['revenda_veiculos']
+    
+    # IRPJ/CSLL - trimestral
+    aliquota_irpj = config['aliquotas']['irpj']['aliquota_base']
+    aliquota_csll = config['aliquotas']['csll']
+    
+    df_vendidos["IRPJ"] = df_vendidos["Base IRPJ/CSLL"] * aliquota_irpj
+    df_vendidos["CSLL"] = df_vendidos["Base IRPJ/CSLL"] * aliquota_csll
+    
+    # Adicional de IRPJ será calculado após agrupamento por trimestre
+    df_vendidos["Adicional IRPJ"] = 0.0
+    
+    # Somar tributos
+    colunas_tributos = ["ICMS", "PIS/COFINS", "IRPJ", "CSLL"]
+    if "ICMS-ST" in df_vendidos.columns:
+        colunas_tributos.append("ICMS-ST")
+    
+    df_vendidos["Total Tributos"] = df_vendidos[colunas_tributos].sum(axis=1)
+    df_vendidos["Lucro Líquido"] = df_vendidos["Lucro"] - df_vendidos["Total Tributos"]
+    
+    # Agrupar por Trimestre para IRPJ/CSLL
+    resumo_trimestral = df_vendidos.groupby("Trimestre_Texto").agg({
+        "Lucro": "sum",
+        "Base IRPJ/CSLL": "sum",
+        "IRPJ": "sum",
+        "CSLL": "sum",
+        "Total Tributos": "sum",
+        "Lucro Líquido": "sum"
+    }).reset_index()
+    
+    # Calcular adicional IRPJ (10% sobre o valor que exceder R$ 60.000 por trimestre)
+    limite_trimestral = config['aliquotas']['irpj']['limite_trimestral']
+    aliquota_adicional = config['aliquotas']['irpj']['adicional']
+    
+    resumo_trimestral["Adicional IRPJ"] = resumo_trimestral["Base IRPJ/CSLL"].apply(
+        lambda base: max(0, (base - limite_trimestral) * aliquota_adicional)
     )
-else:
-    # Mostrar mensagem inicial
-    st.markdown("""
-    <div class="info-card">
-        <h3>👋 Bem-vindo ao Painel Fiscal de Veículos</h3>
-        <p>Para começar, selecione uma empresa e faça upload dos arquivos XML das notas fiscais.</p>
-        <p>O sistema irá processar os dados e gerar relatórios de estoque, auditoria, KPIs e apuração fiscal.</p>
-    </div>
-    """, unsafe_allow_html=True)
+    
+    # Atualizar totais após adicional
+    resumo_trimestral["Total Tributos"] += resumo_trimestral["Adicional IRPJ"]
+    resumo_trimestral["Lucro Líquido"] -= resumo_trimestral["Adicional IRPJ"]
+    
+    # Agrupar por Mês para outros tributos
+    resumo_mensal = df_vendidos.groupby("Mês_Texto").agg({
+        "Lucro": "sum",
+        "ICMS": "sum",
+        "PIS/COFINS": "sum",
+        "Total Tributos": "sum",
+        "Lucro Líquido": "sum"
+    }).reset_index()
+    
+    # Adicionar ICMS-ST se existir
+    if "ICMS-ST" in df_vendidos.columns:
+        resumo_mensal["ICMS-ST"] = df_vendidos.groupby("Mês_Texto")["ICMS-ST"].sum().values
+    
+    # Calcular totais gerais
+    total_geral = {
+        "Lucro": df_vendidos["Lucro"].sum(),
+        "ICMS": df_vendidos["ICMS"].sum(),
+        "PIS/COFINS": df_vendidos["PIS/COFINS"].sum(),
+        "Base IRPJ/CSLL": df_vendidos["Base IRPJ/CSLL"].sum(),
+        "IRPJ": df_vendidos["IRPJ"].sum(),
+        "CSLL": df_vendidos["CSLL"].sum(),
+        "Adicional IRPJ": resumo_trimestral["Adicional IRPJ"].sum(),
+        "Total Tributos": df_vendidos["Total Tributos"].sum() + resumo_trimestral["Adicional IRPJ"].sum(),
+        "Lucro Líquido": df_vendidos["Lucro Líquido"].sum() - resumo_trimestral["Adicional IRPJ"].sum()
+    }
+    
+    if "ICMS-ST" in df_vendidos.columns:
+        total_geral["ICMS-ST"] = df_vendidos["ICMS-ST"].sum()
+    
+    return {
+        'resumo_trimestral': resumo_trimestral,
+        'resumo_mensal': resumo_mensal,
+        'total_geral': total_geral,
+        'detalhamento': df_vendidos
+    }
+
+def gerar_relatorio_fiscal(resultados, periodo, formato='excel'):
+    """Gera relatórios fiscais em diferentes formatos."""
+    today = datetime.now().strftime('%Y%m%d')
+    
+    if isinstance(periodo, tuple) and len(periodo) == 2:
+        inicio, fim = periodo
+        periodo_str = f"{inicio.strftime('%Y%m%d')}_a_{fim.strftime('%Y%m%d')}"
+    else:
+        periodo_str = 'completo'
+    
+    nome_base = f"relatorio_fiscal_{periodo_str}_{today}"
+    
+    # Extrair DataFrames dos resultados
+    resumo_trimestral = resultados.get('resumo_trimestral', pd.DataFrame())
+    resumo_mensal = resultados.get('resumo_mensal', pd.DataFrame())
+    detalhamento = resultados.get('detalhamento', pd.DataFrame())
+    total_geral = resultados.get('total_geral', {})
+    
+    # Formatar valores para visualização
+    for df in [resumo_trimestral, resumo_mensal, detalhamento]:
+        if not df.empty:
+            for coluna in df.select_dtypes(include=['float64']).columns:
+                df[coluna] = df[coluna].round(2)
+    
+    # Excel (formato padrão e mais completo)
+    if formato.lower() in ['excel', 'xlsx', 'xls']:
+        arquivo = f"{nome_base}.xlsx"
+        with pd.ExcelWriter(arquivo, engine='openpyxl') as writer:
+            resumo_trimestral.to_excel(writer, sheet_name='Resumo Trimestral', index=False)
+            resumo_mensal.to_excel(writer, sheet_name='Resumo Mensal', index=False)
+            
+            # Total geral como uma linha
+            pd.DataFrame([total_geral]).to_excel(writer, sheet_name='Total Geral', index=False)
+            
+            # Detalhamento completo
+            if not detalhamento.empty:
+                colunas_detalhamento = [
+                    'Data Saída', 'Trimestre_Texto', 'Mês_Texto', 'Lucro',
+                    'ICMS', 'PIS/COFINS', 'Base IRPJ/CSLL', 'IRPJ', 'CSLL',
+                    'Total Tributos', 'Lucro Líquido'
+                ]
+                
+                # Adicionar ICMS-ST se existir
+                if 'ICMS-ST' in detalhamento.columns:
+                    colunas_detalhamento.insert(colunas_detalhamento.index('ICMS') + 1, 'ICMS-ST')
+                
+                # Filtrar e ordenar colunas
+                detalhamento_export = detalhamento[
+                    [col for col in colunas_detalhamento if col in detalhamento.columns]
+                ]
+                detalhamento_export.to_excel(writer, sheet_name='Detalhamento', index=False)
+        
+        logger.info(f"Relatório Excel gerado: {arquivo}")
+        return arquivo
+    
+    # CSV (formato simples, apenas resumos)
+    elif formato.lower() == 'csv':
+        arquivo_trimestral = f"{nome_base}_trimestral.csv"
+        arquivo_mensal = f"{nome_base}_mensal.csv"
+        
+        resumo_trimestral.to_csv(arquivo_trimestral, index=False)
+        resumo_mensal.to_csv(arquivo_mensal, index=False)
+        
+        logger.info(f"Relatórios CSV gerados: {arquivo_trimestral}, {arquivo_mensal}")
+        return [arquivo_trimestral, arquivo_mensal]
+    
+    # JSON (formato para integração com outros sistemas)
+    elif formato.lower() == 'json':
+        arquivo = f"{nome_base}.json"
+        
+        # Preparar dicionário para JSON
+        dados_json = {
+            'resumo_trimestral': resumo_trimestral.to_dict(orient='records'),
+            'resumo_mensal': resumo_mensal.to_dict(orient='records'),
+            'total_geral': total_geral
+        }
+        
+        with open(arquivo, 'w', encoding='utf-8') as f:
+            json.dump(dados_json, f, ensure_ascii=False, indent=4)
+        
+        logger.info(f"Relatório JSON gerado: {arquivo}")
+        return arquivo
+    
+    else:
+        logger.error(f"Formato de relatório não suportado: {formato}")
+        raise ValueError(f"Formato '{formato}' não suportado. Use 'excel', 'csv' ou 'json'.")
+
+def analise_mensal_saidas(df, ano=None, mes=None):
+    """Análise específica de saídas mensais."""
+    df = df.copy()
+    
+    # Filtrar apenas veículos vendidos
+    df_vendidos = df[df["Situação"] == "Vendido"].copy()
+    
+    if df_vendidos.empty:
+        logger.warning("Nenhum veículo vendido encontrado")
+        return pd.DataFrame()
+    
+    # Garantir que a coluna de data está correta
+    df_vendidos["Data Saída"] = pd.to_datetime(df_vendidos["Data Saída"], errors="coerce")
+    
+    # Filtrar por ano e mês se especificados
+    if ano and mes:
+        df_vendidos = df_vendidos[
+            (df_vendidos["Data Saída"].dt.year == ano) & 
+            (df_vendidos["Data Saída"].dt.month == mes)
+        ]
+    
+    # Adicionar mês para agrupamento
+    df_vendidos["Mês"] = df_vendidos["Data Saída"].dt.to_period("M")
+    df_vendidos["Mês_Texto"] = df_vendidos["Data Saída"].dt.strftime("%Y-%m")
+    
+    # Análise por tipo de veículo se disponível
+    if "Tipo Veículo" in df_vendidos.columns:
+        analise_tipo = df_vendidos.groupby(["Mês_Texto", "Tipo Veículo"]).agg({
+            "Lucro": ["sum", "mean", "count"],
+            "Valor Venda": ["sum", "mean"],
+            "Valor Custo": ["sum", "mean"]
+        })
+        
+        # Achatar hierarquia para facilitar visualização
+        analise_tipo.columns = [f"{col[0]}_{col[1]}" for col in analise_tipo.columns]
+        analise_tipo = analise_tipo.reset_index()
+        
+        # Calcular margem média
+        analise_tipo["Margem_Media"] = (analise_tipo["Lucro_sum"] / analise_tipo["Valor Venda_sum"] * 100).round(2)
+        
+        return analise_tipo
+    
+    # Análise básica se não houver tipo de veículo
+    analise_basica = df_vendidos.groupby("Mês_Texto").agg({
+        "Lucro": ["sum", "mean", "count"],
+        "Valor Venda": ["sum", "mean"],
+        "Valor Custo": ["sum", "mean"]
+    })
+    
+    # Achatar hierarquia
+    analise_basica.columns = [f"{col[0]}_{col[1]}" for col in analise_basica.columns]
+    analise_basica = analise_basica.reset_index()
+    
+    # Calcular margem média
+    analise_basica["Margem_Media"] = (analise_basica["Lucro_sum"] / analise_basica["Valor Venda_sum"] * 100).round(2)
+    
+    return analise_basica
+
+def analisar_estoque(df):
+    """Analisa veículos em estoque e métricas relacionadas."""
+    df = df.copy()
+    
+    # Filtrar veículos em estoque
+    df_estoque = df[df["Situação"] == "Em Estoque"].copy()
+    
+    if df_estoque.empty:
+        logger.warning("Nenhum veículo em estoque encontrado")
+        return pd.DataFrame()
+    
+    # Calcular idade do estoque
+    hoje = pd.Timestamp('today')
+    if "Data Entrada" in df_estoque.columns:
+        df_estoque["Data Entrada"] = pd.to_datetime(df_estoque["Data Entrada"], errors="coerce")
+        df_estoque["Dias em Estoque"] = (hoje - df_estoque["Data Entrada"]).dt.days
+    
+    # Resumo por tipo de veículo se disponível
+    if "Tipo Veículo" in df_estoque.columns:
+        resumo_estoque = df_estoque.groupby("Tipo Veículo").agg({
+            "Valor Custo": ["sum", "mean", "count"],
+            "Dias em Estoque": ["mean", "max", "min"] if "Dias em Estoque" in df_estoque.columns else []
+        })
+        
+        # Achatar hierarquia
+        if not resumo_estoque.empty:
+            resumo_estoque.columns = [f"{col[0]}_{col[1]}" for col in resumo_estoque.columns]
+            resumo_estoque = resumo_estoque.reset_index()
+            
+            # Renomear contagem para "Quantidade"
+            if "Valor Custo_count" in resumo_estoque.columns:
+                resumo_estoque = resumo_estoque.rename(columns={"Valor Custo_count": "Quantidade"})
+        
+        return resumo_estoque
+    
+    # Resumo básico se não houver tipo de veículo
+    resumo_basico = {
+        "Total Veículos": len(df_estoque),
+        "Valor Total Estoque": df_estoque["Valor Custo"].sum(),
+        "Valor Médio Unitário": df_estoque["Valor Custo"].mean()
+    }
+    
+    if "Dias em Estoque" in df_estoque.columns:
+        resumo_basico.update({
+            "Média Dias em Estoque": df_estoque["Dias em Estoque"].mean(),
+            "Máximo Dias em Estoque": df_estoque["Dias em Estoque"].max(),
+            "Mínimo Dias em Estoque": df_estoque["Dias em Estoque"].min()
+        })
+    
+    return pd.DataFrame([resumo_basico])
+
+def processar_apuracao_completa(arquivo_excel, periodo=None, gerar_relatorio=True, formato_relatorio='excel'):
+    """Função principal que processa todos os dados e gera apuração completa."""
+    try:
+        # Carregar dados
+        logger.info(f"Carregando dados do arquivo: {arquivo_excel}")
+        df_estoque = pd.read_excel(arquivo_excel)
+        
+        # Carregar configurações
+        config = carregar_configuracoes()
+        
+        # Validar e limpar dados
+        logger.info("Validando e limpando dados")
+        df_limpo = validar_dados(df_estoque)
+        
+        # Classificar operações
+        logger.info("Classificando operações")
+        df_classificado = classificar_operacoes(df_limpo)
+        
+        # Calcular ICMS-ST se aplicável
+        logger.info("Calculando ICMS-ST")
+        df_com_st = calcular_icms_st(df_classificado, config)
+        
+        # Definir período se não especificado
+        if not periodo:
+            # Usar mês atual como padrão
+            hoje = datetime.now()
+            inicio_mes = datetime(hoje.year, hoje.month, 1)
+            fim_mes = inicio_mes + relativedelta(months=1, days=-1)
+            periodo = (inicio_mes, fim_mes)
+            logger.info(f"Usando período padrão: {inicio_mes.strftime('%d/%m/%Y')} a {fim_mes.strftime('%d/%m/%Y')}")
+        
+        # Calcular tributos
+        logger.info("Calculando tributos")
+        resultados_tributos = calcular_tributos(df_com_st, config, periodo)
+        
+        # Análise de saídas mensais
+        logger.info("Analisando saídas mensais")
+        if periodo and isinstance(periodo, tuple) and len(periodo) == 2:
+            inicio, fim = periodo
+            analise_saidas = analise_mensal_saidas(df_com_st, ano=inicio.year, mes=inicio.month)
+        else:
+            analise_saidas = analise_mensal_saidas(df_com_st)
+        
+        # Análise de estoque
+        logger.info("Analisando estoque")
+        analise_estoque = analisar_estoque(df_com_st)
+        
+        # Gerar relatório se solicitado
+        if gerar_relatorio:
+            logger.info(f"Gerando relatório no formato: {formato_relatorio}")
+            caminho_relatorio = gerar_relatorio_fiscal(resultados_tributos, periodo, formato_relatorio)
+            logger.info(f"Relatório gerado com sucesso: {caminho_relatorio}")
+        
+        # Compilar resultados completos
+        resultados_completos = {
+            'tributos': resultados_tributos,
+            'analise_saidas': analise_saidas,
+            'analise_estoque': analise_estoque
+        }
+        
+        return resultados_completos
+    
+    except Exception as e:
+        logger.error(f"Erro ao processar apuração: {str(e)}", exc_info=True)
+        raise
+
+def gerar_dashboards(resultados):
+    """Gera visualizações e dashboards para análise gerencial."""
+    try:
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        
+        # Criar pasta para visualizações se não existir
+        pasta_visualizacoes = 'visualizacoes'
+        if not os.path.exists(pasta_visualizacoes):
+            os.makedirs(pasta_visualizacoes)
+        
+        # Extrair dados
+        resumo_trimestral = resultados['tributos'].get('resumo_trimestral', pd.DataFrame())
+        resumo_mensal = resultados['tributos'].get('resumo_mensal', pd.DataFrame())
+        analise_saidas = resultados.get('analise_saidas', pd.DataFrame())
+        
+        # Lista para armazenar caminhos dos gráficos gerados
+        graficos_gerados = []
+        
+        # Configurar estilo
+        plt.style.use('ggplot')
+        
+        # 1. Gráfico de Evolução da Lucratividade
+        if not resumo_mensal.empty and 'Mês_Texto' in resumo_mensal.columns and 'Lucro' in resumo_mensal.columns:
+            plt.figure(figsize=(12, 6))
+            plt.plot(resumo_mensal['Mês_Texto'], resumo_mensal['Lucro'], marker='o', linewidth=2)
+            plt.fill_between(resumo_mensal['Mês_Texto'], resumo_mensal['Lucro'], alpha=0.3)
+            plt.grid(True, linestyle='--', alpha=0.7)
+            plt.title('Evolução da Lucratividade Mensal', fontsize=15)
+            plt.xlabel('Mês')
+            plt.ylabel('Lucro (R$)')
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            
+            caminho_grafico = os.path.join(pasta_visualizacoes, 'evolucao_lucratividade_mensal.png')
+            plt.savefig(caminho_grafico, dpi=300)
+            plt.close()
+            graficos_gerados.append(caminho_grafico)
+        
+        # 2. Gráfico da Distribuição de Tributos por Trimestre
+        if not resumo_trimestral.empty:
+            colunas_tributos = ['ICMS', 'PIS/COFINS', 'IRPJ', 'CSLL', 'Adicional IRPJ']
+            colunas_presentes = [col for col in colunas_tributos if col in resumo_trimestral.columns]
+            
+            if colunas_presentes:
+                plt.figure(figsize=(12, 8))
+                
+                # Criar gráfico de barras empilhadas
+                bottom = np.zeros(len(resumo_trimestral))
+                
+                for col in colunas_presentes:
+                    plt.bar(resumo_trimestral['Trimestre_Texto'], resumo_trimestral[col], bottom=bottom, label=col)
+                    bottom += resumo_trimestral[col].values
+                
+                plt.title('Composição de Tributos por Trimestre', fontsize=15)
+                plt.xlabel('Trimestre')
+                plt.ylabel('Valor (R$)')
+                plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+                plt.xticks(rotation=45)
+                plt.grid(True, linestyle='--', alpha=0.3)
+                plt.tight_layout()
+                
+                caminho_grafico = os.path.join(pasta_visualizacoes, 'composicao_tributos_trimestral.png')
+                plt.savefig(caminho_grafico, dpi=300)
+                plt.close()
+                graficos_gerados.append(caminho_grafico)
+        
+        # 3. Gráfico de Margem Média por Tipo de Veículo
+        if not analise_saidas.empty and 'Tipo Veículo' in analise_saidas.columns and 'Margem_Media' in analise_saidas.columns:
+            plt.figure(figsize=(10, 8))
+            
+            # Agrupamento por tipo de veículo
+            margem_por_tipo = analise_saidas.groupby('Tipo Veículo')['Margem_Media'].mean().sort_values(ascending=False)
+            
+            sns.barplot(x=margem_por_tipo.values, y=margem_por_tipo.index)
+            plt.title('Margem Média por Tipo de Veículo', fontsize=15)
+            plt.xlabel('Margem (%)')
+            plt.grid(True, linestyle='--', alpha=0.7)
+            plt.tight_layout()
+            
+            caminho_grafico = os.path.join(pasta_visualizacoes, 'margem_por_tipo_veiculo.png')
+            plt.savefig(caminho_grafico, dpi=300)
+            plt.close()
+            graficos_gerados.append(caminho_grafico)
+        
+        # 4. Gráfico de Lucro Líquido vs. Tributos
+        if not resumo_mensal.empty and 'Mês_Texto' in resumo_mensal.columns:
+            if 'Lucro Líquido' in resumo_mensal.columns and 'Total Tributos' in resumo_mensal.columns:
+                plt.figure(figsize=(12, 6))
+                
+                x = np.arange(len(resumo_mensal))
+                largura = 0.35
+                
+                plt.bar(x - largura/2, resumo_mensal['Lucro Líquido'], largura, label='Lucro Líquido')
+                plt.bar(x + largura/2, resumo_mensal['Total Tributos'], largura, label='Total Tributos')
+                
+                plt.xlabel('Mês')
+                plt.ylabel('Valor (R$)')
+                plt.title('Lucro Líquido vs. Total de Tributos', fontsize=15)
+                plt.xticks(x, resumo_mensal['Mês_Texto'], rotation=45)
+                plt.legend()
+                plt.grid(True, linestyle='--', alpha=0.3)
+                plt.tight_layout()
+                
+                caminho_grafico = os.path.join(pasta_visualizacoes, 'lucro_vs_tributos.png')
+                plt.savefig(caminho_grafico, dpi=300)
+                plt.close()
+                graficos_gerados.append(caminho_grafico)
+        
+        return graficos_gerados
+    
+    except ImportError as e:
+        logger.warning(f"Não foi possível gerar visualizações. Bibliotecas necessárias não encontradas: {str(e)}")
+        return []
+    except Exception as e:
+        logger.error(f"Erro ao gerar dashboards: {str(e)}", exc_info=True)
+        return []
+
+def exportar_para_sistema_contabil(resultados, sistema='dominio'):
+    """Exporta dados para formatos compatíveis com sistemas contábeis."""
+    sistemas_suportados = ['dominio', 'fortes', 'sage', 'cont_matic', 'generic']
+    
+    if sistema.lower() not in sistemas_suportados:
+        logger.warning(f"Sistema contábil '{sistema}' não suportado. Usando formato genérico.")
+        sistema = 'generic'
+    
+    # Obter data atual para o nome do arquivo
+    hoje = datetime.now().strftime('%Y%m%d')
+    
+    # Extrair resumo mensal dos resultados
+    resumo_mensal = resultados['tributos'].get('resumo_mensal', pd.DataFrame())
+    
+    if resumo_mensal.empty:
+        logger.warning("Sem dados mensais para exportar")
+        return None
+    
+    # Preparar diretório de exportação
+    dir_exportacao = 'exportacao_contabil'
+    if not os.path.exists(dir_exportacao):
+        os.makedirs(dir_exportacao)
+    
+    # Configurações específicas por sistema
+    if sistema.lower() == 'dominio':
+        # Formato específico para o sistema Domínio
+        arquivo = os.path.join(dir_exportacao, f'dominio_apuracao_{hoje}.csv')
+        
+        # Preparar colunas conforme layout do Domínio
+        df_export = resumo_mensal.copy()
+        
+        # Formatação de colunas
+        df_export['DATA'] = pd.to_datetime(df_export['Mês_Texto'] + '-01').dt.strftime('%d/%m/%Y')
+        df_export['VALOR_VENDA'] = df_export['Lucro'] + df_export['Total Tributos']
+        df_export['LUCRO'] = df_export['Lucro']
+        df_export['ICMS'] = df_export['ICMS'] if 'ICMS' in df_export.columns else 0
+        df_export['PIS_COFINS'] = df_export['PIS/COFINS'] if 'PIS/COFINS' in df_export.columns else 0
+        
+        # Selecionar e renomear colunas para o padrão do sistema
+        colunas_export = ['DATA', 'VALOR_VENDA', 'LUCRO', 'ICMS', 'PIS_COFINS']
+        df_export = df_export[colunas_export]
+        
+        # Exportar CSV com separador ponto-e-vírgula (padrão brasileiro)
+        df_export.to_csv(arquivo, sep=';', index=False, decimal=',')
+        
+    elif sistema.lower() == 'fortes':
+        # Formato para o sistema Fortes
+        arquivo = os.path.join(dir_exportacao, f'fortes_apuracao_{hoje}.csv')
+        
+        # Preparar dados
+        df_export = resumo_mensal.copy()
+        
+        # Formatar conforme layout do Fortes
+        df_export['COMPETENCIA'] = pd.to_datetime(df_export['Mês_Texto'] + '-01').dt.strftime('%m/%Y')
+        df_export['RECEITA_BRUTA'] = df_export['Lucro'] + df_export['Total Tributos'] 
+        df_export['LUCRO_PRESUMIDO'] = df_export['Base IRPJ/CSLL'] if 'Base IRPJ/CSLL' in df_export.columns else 0
+        df_export['ICMS_APURADO'] = df_export['ICMS'] if 'ICMS' in df_export.columns else 0
+        df_export['PIS_APURADO'] = df_export['PIS/COFINS'] * 0.178 if 'PIS/COFINS' in df_export.columns else 0  # Aproximação
+        df_export['COFINS_APURADO'] = df_export['PIS/COFINS'] * 0.822 if 'PIS/COFINS' in df_export.columns else 0  # Aproximação
+        
+        # Exportar
+        colunas_export = ['COMPETENCIA', 'RECEITA_BRUTA', 'LUCRO_PRESUMIDO', 'ICMS_APURADO', 'PIS_APURADO', 'COFINS_APURADO']
+        df_export[colunas_export].to_csv(arquivo, sep=';', index=False, decimal=',')
+        
+    else:
+        # Formato genérico (CSV padrão)
+        arquivo = os.path.join(dir_exportacao, f'apuracao_contabil_{hoje}.csv')
+        
+        # Exportar dados mensais completos
+        resumo_mensal.to_csv(arquivo, index=False)
+    
+    logger.info(f"Dados exportados para sistema contábil {sistema}: {arquivo}")
+    return arquivo
+
+def main(arquivo_excel, periodo=None, gerar_visualizacoes=True, exportar_contabil=False, sistema_contabil='generic'):
+    """Função principal que executa o fluxo completo."""
+    try:
+        # Processar apuração fiscal
+        logger.info("Iniciando processamento de apuração fiscal")
+        resultados = processar_apuracao_completa(arquivo_excel, periodo)
+        
+        # Gerar visualizações se solicitado
+        if gerar_visualizacoes:
+            logger.info("Gerando visualizações e dashboards")
+            graficos = gerar_dashboards(resultados)
+            if graficos:
+                logger.info(f"Visualizações geradas: {len(graficos)} gráficos")
+            else:
+                logger.warning("Não foi possível gerar visualizações")
+        
+        # Exportar para sistema contábil se solicitado
+        if exportar_contabil:
+            logger.info(f"Exportando dados para sistema contábil: {sistema_contabil}")
+            arquivo_exportacao = exportar_para_sistema_contabil(resultados, sistema_contabil)
+            if arquivo_exportacao:
+                logger.info(f"Dados exportados para: {arquivo_exportacao}")
+        
+        logger.info("Processamento concluído com sucesso!")
+        return resultados
+    
+    except Exception as e:
+        logger.error(f"Erro no processamento principal: {str(e)}", exc_info=True)
+        raise
+
+# Exemplo de uso
+if __name__ == "__main__":
+    # Configurar nome do arquivo de dados
+    arquivo_dados = "estoque_veiculos.xlsx"
+    
+    # Definir período (opcional)
+    # Para período específico:
+    # inicio = datetime(2025, 1, 1)
+    # fim = datetime(2025, 3, 31)
+    # periodo = (inicio, fim)
+    
+    # Para usar o período atual:
+    periodo = None
+    
+    # Executar processamento
+    try:
+        resultados = main(
+            arquivo_excel=arquivo_dados,
+            periodo=periodo,
+            gerar_visualizacoes=True,
+            exportar_contabil=True,
+            sistema_contabil='dominio'
+        )
+        
+        print("Processamento concluído com sucesso!")
+        
+        # Exibir resumo dos resultados
+        total_geral = resultados['tributos'].get('total_geral', {})
+        if total_geral:
+            print("\nResumo dos resultados:")
+            print(f"Total de Lucro: R$ {total_geral.get('Lucro', 0):.2f}")
+            print(f"Total de Tributos: R$ {total_geral.get('Total Tributos', 0):.2f}")
+            print(f"Lucro Líquido: R$ {total_geral.get('Lucro Líquido', 0):.2f}")
+            
+    except FileNotFoundError:
+        print(f"Erro: Arquivo {arquivo_dados} não encontrado.")
+        print("Certifique-se de que o arquivo Excel com os dados de estoque existe no diretório.")
+    except Exception as e:
+        print(f"Erro durante o processamento: {str(e)}")
+        import traceback
+        traceback.print_exc()
