@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
 
+
 # Configuração de Logs
 logging.basicConfig(
     level=logging.INFO,
@@ -88,7 +89,7 @@ def validar_chassi(chassi: Optional[str]) -> bool:
     """Valida o formato do chassi."""
     if not chassi:
         return False
-    chassi = str(chassi).strip().upper()
+    chassi = re.sub(r"\W", "", str(chassi)).upper()
     pattern = re.compile(CONFIG_EXTRACAO["validadores"]["chassi"])
     return bool(pattern.fullmatch(chassi))
 
@@ -152,23 +153,12 @@ def classificar_tipo_nota(
     return "Saída"
 
 def classificar_produto(row: Dict[str, Any]) -> str:
-    """Classifica o produto como veículo ou consumo."""
-    # Verifica dados de veículo
-    if row.get('Chassi') or row.get('Placa') or row.get('Renavam'):
+    """Classifica o item como veículo apenas se houver chassi."""
+
+    chassi = row.get("Chassi")
+    if chassi is not None and str(chassi).strip():
         return "Veículo"
-    
-    # Verifica descrição do produto
-    produto = str(row.get('Produto') or "").lower()
-    termos_veiculo = [
-        'veículo', 'veiculo', 'automóvel', 'automovel', 'caminhão', 'caminhao', 
-        'motocicleta', 'moto', 'camionete', 'caminhonete', 'reboque', 'utilitário'
-    ]
-    
-    for termo in termos_veiculo:
-        if termo in produto:
-            return "Veículo"
-    
-    
+
     return "Consumo"
 
 def limpar_texto(texto: Optional[str]) -> str:
