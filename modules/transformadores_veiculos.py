@@ -30,28 +30,45 @@ def verificar_produto_valido(produto):
 
 # Gerar Estoque Fiscal
 def gerar_estoque_fiscal(df_entrada, df_saida):
+    """Gera o controle de estoque fiscal a partir das notas de entrada e
+    saída.
+
+    A correspondência entre uma nota de entrada e outra de saída é feita
+    prioritariamente pelo chassi do veículo. Caso existam múltiplas
+    entradas ou saídas para o mesmo chassi elas são pareadas na ordem de
+    emissão para evitar cruzamentos duplicados."""
+
     df_entrada = df_entrada.copy()
     df_saida = df_saida.copy()
 
-    df_entrada['Chave'] = df_entrada['Chassi'].fillna('') + df_entrada['Placa'].fillna('')
-    df_saida['Chave'] = df_saida['Chassi'].fillna('') + df_saida['Placa'].fillna('')
+    # Priorizar o chassi como chave de rastreamento. Caso ausente, utiliza
+    # a placa para manter a compatibilidade com dados mais antigos.
+    df_entrada['Chave'] = df_entrada['Chassi'].fillna(df_entrada['Placa']).fillna('')
+    df_saida['Chave'] = df_saida['Chassi'].fillna(df_saida['Placa']).fillna('')
 
     merge_cols = ['Chave']
     if 'Empresa CNPJ' in df_entrada.columns and 'Empresa CNPJ' in df_saida.columns:
         merge_cols.append('Empresa CNPJ')
 
-    # Remover duplicidades explícitas de saída para evitar múltiplas associações
-    df_saida = df_saida.drop_duplicates(subset=merge_cols)
+    # Ordenar pelas datas de emissão para garantir o pareamento correto
+    if 'Data Emissão' in df_entrada.columns:
+        df_entrada['Data Emissão'] = pd.to_datetime(df_entrada['Data Emissão'], errors='coerce')
+    if 'Data Emissão' in df_saida.columns:
+        df_saida['Data Emissão'] = pd.to_datetime(df_saida['Data Emissão'], errors='coerce')
 
-    # Usar junção externa para identificar saídas sem entradas
+    # Criar uma coluna sequencial por chassi/empresa para parear múltiplas
+    # entradas e saídas do mesmo veículo.
+    df_entrada['seq'] = df_entrada.sort_values('Data Emissão').groupby(merge_cols).cumcount()
+    df_saida['seq'] = df_saida.sort_values('Data Emissão').groupby(merge_cols).cumcount()
+
     df_estoque = pd.merge(
         df_entrada,
         df_saida,
-        on=merge_cols,
+        on=merge_cols + ['seq'],
         how='outer',
         suffixes=('_entrada', '_saida'),
         indicator=True,
-    )
+    ).drop(columns=['seq'])
 
     # Classificação do status do veículo
     def classificar_status(merge_flag):
@@ -87,8 +104,8 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
     df_entrada = df_entrada.copy()
     df_saida = df_saida.copy()
 
-    df_entrada['Chave'] = df_entrada['Chassi'].fillna('') + df_entrada['Placa'].fillna('')
-    df_saida['Chave'] = df_saida['Chassi'].fillna('') + df_saida['Placa'].fillna('')
+    df_entrada['Chave'] = df_entrada['Chassi'].fillna(df_entrada['Placa']).fillna('')
+    df_saida['Chave'] = df_saida['Chassi'].fillna(df_saida['Placa']).fillna('')
 
     duplicadas_entrada = df_entrada[df_entrada.duplicated('Chave', keep=False)]
     duplicadas_saida = df_saida[df_saida.duplicated('Chave', keep=False)]
@@ -102,12 +119,16 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
             erros.append({'Tipo': 'Saída', 'Nota Fiscal': row.get('Nota Fiscal'), 'Erro': 'DUPLICIDADE_SAIDA'})
 
     # Saída sem correspondente na entrada
-    chaves_entrada = set(df_entrada['Chave'])
-    saidas_sem_entrada = df_saida[~df_saida['Chave'].isin(chaves_entrada)]
+    entradas_count = df_entrada['Chave'].value_counts()
+    saidas_count = df_saida['Chave'].value_counts()
 
-    for _, row in saidas_sem_entrada.iterrows():
-        if verificar_produto_valido(row.get('Produto', '')):
-            erros.append({'Tipo': 'Saída', 'Nota Fiscal': row.get('Nota Fiscal'), 'Erro': 'SAIDA_SEM_ENTRADA'})
+    for chave, qtd_saida in saidas_count.items():
+        qtd_entrada = entradas_count.get(chave, 0)
+        if qtd_saida > qtd_entrada:
+            excedentes = df_saida[df_saida['Chave'] == chave].iloc[qtd_entrada:]
+            for _, row in excedentes.iterrows():
+                if verificar_produto_valido(row.get('Produto', '')):
+                    erros.append({'Tipo': 'Saída', 'Nota Fiscal': row.get('Nota Fiscal'), 'Erro': 'SAIDA_SEM_ENTRADA'})
 
     return pd.DataFrame(erros)
 
