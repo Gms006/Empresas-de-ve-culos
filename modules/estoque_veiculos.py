@@ -128,10 +128,11 @@ def classificar_tipo_nota(
     cnpj_empresa: Union[str, List[str], None],
     cfop: Optional[str],
 ) -> str:
-    """Classifica a nota como Entrada ou Saída.
+    """Classifica a nota fiscal conforme os CNPJs envolvidos.
 
-    A regra utiliza primeiro o CFOP, quando disponível, e, em caso de
-    incerteza, verifica os CNPJs de emitente e destinatário.
+    A prioridade é verificar se o emitente ou o destinatário corresponde
+    à empresa. Somente quando ambos os CNPJs forem da própria empresa é
+    que o CFOP será utilizado para desempate.
     """
 
     emitente = normalizar_cnpj(emitente_cnpj)
@@ -142,19 +143,34 @@ def classificar_tipo_nota(
     else:
         cnpjs_empresa = [normalizar_cnpj(cnpj_empresa)]
 
-    # 1) Analisar CFOP se fornecido
+    emitente_empresa = emitente in cnpjs_empresa
+    destinatario_empresa = destinatario in cnpjs_empresa
+
+    if emitente_empresa and not destinatario_empresa:
+        return "Saída"
+
+    if destinatario_empresa and not emitente_empresa:
+        return "Entrada"
+
+    if emitente_empresa and destinatario_empresa:
+        cfop_str = str(cfop or "")
+        if cfop_str.startswith(("1", "2")):
+            return "Entrada"
+        if cfop_str.startswith(("5", "6")):
+            return "Saída"
+        log.warning(
+            "CFOP não definido para nota com emitente e destinatário iguais à empresa: %s",
+            cfop,
+        )
+        return "Saída"
+
+    # Nenhum CNPJ da empresa encontrado; usar CFOP como indicativo, se houver
     if cfop:
         cfop_str = str(cfop)
         if cfop_str.startswith(("1", "2")):
             return "Entrada"
         if cfop_str.startswith(("5", "6")):
             return "Saída"
-
-    # 2) Caso o CFOP não seja conclusivo, usar os CNPJs
-    if destinatario in cnpjs_empresa:
-        return "Entrada"
-    if emitente in cnpjs_empresa:
-        return "Saída"
 
     log.warning(
         "CNPJ não identificado como da empresa: Emitente=%s, Destinatario=%s, Empresa=%s. Classificado como Saída por padrão.",
