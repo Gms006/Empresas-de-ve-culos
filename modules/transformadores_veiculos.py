@@ -30,41 +30,65 @@ def verificar_produto_valido(produto):
 
 # Gerar Estoque Fiscal
 def gerar_estoque_fiscal(df_entrada, df_saida):
+    """Concilia notas de entrada e saída e classifica o status do veículo.
+
+    A correspondência é feita pelo chassi e, quando disponível, pelo CNPJ da
+    empresa. Veículos sem nota de entrada correspondente são sinalizados como
+    ``Erro``.
+    """
+
     df_entrada = df_entrada.copy()
     df_saida = df_saida.copy()
 
-    df_entrada['Chave'] = df_entrada['Chassi'].fillna('') + df_entrada['Placa'].fillna('')
-    df_saida['Chave'] = df_saida['Chassi'].fillna('') + df_saida['Placa'].fillna('')
+    # Normalizar chassi e filtrar apenas registros com chassi informado
+    df_entrada['Chassi'] = df_entrada['Chassi'].str.upper()
+    df_saida['Chassi'] = df_saida['Chassi'].str.upper()
 
-    merge_cols = ['Chave']
+    df_entrada = df_entrada[df_entrada['Chassi'].notna()]
+    df_saida = df_saida[df_saida['Chassi'].notna()]
+
+    df_entrada.rename(columns={'Data Emissão': 'Data Entrada'}, inplace=True)
+    df_saida.rename(columns={'Data Emissão': 'Data Saída'}, inplace=True)
+
+    merge_cols = ['Chassi']
     if 'Empresa CNPJ' in df_entrada.columns and 'Empresa CNPJ' in df_saida.columns:
         merge_cols.append('Empresa CNPJ')
 
+    df_entrada = df_entrada.drop_duplicates(subset=merge_cols)
     df_saida = df_saida.drop_duplicates(subset=merge_cols)
 
     df_estoque = pd.merge(
         df_entrada,
         df_saida,
         on=merge_cols,
-        how='left',
+        how='outer',
         suffixes=('_entrada', '_saida'),
     )
 
-    if 'Data Emissão_saida' in df_estoque.columns:
-        df_estoque['Situação'] = df_estoque['Data Emissão_saida'].notna().map({True: 'Vendido', False: 'Em Estoque'})
-        df_estoque.rename(columns={'Data Emissão_saida': 'Data Saída'}, inplace=True)
-    else:
-        df_estoque['Situação'] = 'Em Estoque'
-        df_estoque['Data Saída'] = pd.NaT
+    df_estoque['Situação'] = 'Erro'
+    df_estoque.loc[
+        df_estoque['Data Entrada'].notna() & df_estoque['Data Saída'].notna(),
+        'Situação',
+    ] = 'Vendido'
+    df_estoque.loc[
+        df_estoque['Data Entrada'].notna() & df_estoque['Data Saída'].isna(),
+        'Situação',
+    ] = 'Em Estoque'
 
-    df_estoque['Valor Entrada'] = pd.to_numeric(df_estoque.get('Valor Total_entrada'), errors='coerce').fillna(0)
-    df_estoque['Valor Venda'] = pd.to_numeric(df_estoque.get('Valor Total_saida'), errors='coerce').fillna(0)
+    df_estoque['Valor Entrada'] = pd.to_numeric(
+        df_estoque.get('Valor Total_entrada'), errors='coerce'
+    ).fillna(0)
+    df_estoque['Valor Venda'] = pd.to_numeric(
+        df_estoque.get('Valor Total_saida'), errors='coerce'
+    ).fillna(0)
     df_estoque['Lucro'] = df_estoque['Valor Venda'] - df_estoque['Valor Entrada']
 
-    if 'Data Emissão_entrada' in df_estoque.columns:
-        df_estoque['Mês Entrada'] = pd.to_datetime(df_estoque['Data Emissão_entrada'], errors='coerce').dt.to_period('M').dt.start_time
-    if 'Data Saída' in df_estoque.columns:
-        df_estoque['Mês Saída'] = pd.to_datetime(df_estoque['Data Saída'], errors='coerce').dt.to_period('M').dt.start_time
+    df_estoque['Mês Entrada'] = pd.to_datetime(
+        df_estoque['Data Entrada'], errors='coerce'
+    ).dt.to_period('M').dt.start_time
+    df_estoque['Mês Saída'] = pd.to_datetime(
+        df_estoque['Data Saída'], errors='coerce'
+    ).dt.to_period('M').dt.start_time
 
     return df_estoque
 
@@ -75,8 +99,8 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
     df_entrada = df_entrada.copy()
     df_saida = df_saida.copy()
 
-    df_entrada['Chave'] = df_entrada['Chassi'].fillna('') + df_entrada['Placa'].fillna('')
-    df_saida['Chave'] = df_saida['Chassi'].fillna('') + df_saida['Placa'].fillna('')
+    df_entrada['Chave'] = df_entrada['Chassi'].fillna('')
+    df_saida['Chave'] = df_saida['Chassi'].fillna('')
 
     duplicadas_entrada = df_entrada[df_entrada.duplicated('Chave', keep=False)]
     duplicadas_saida = df_saida[df_saida.duplicated('Chave', keep=False)]
@@ -88,6 +112,13 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
     for _, row in duplicadas_saida.iterrows():
         if verificar_produto_valido(row.get('Produto', '')):
             erros.append({'Tipo': 'Saída', 'Nota Fiscal': row.get('Nota Fiscal'), 'Erro': 'DUPLICIDADE_SAIDA'})
+
+    # Saídas sem entradas correspondentes
+    chassi_entrada = set(df_entrada['Chave'])
+    sem_entrada = df_saida[~df_saida['Chave'].isin(chassi_entrada)]
+    for _, row in sem_entrada.iterrows():
+        if verificar_produto_valido(row.get('Produto', '')):
+            erros.append({'Tipo': 'Saída', 'Nota Fiscal': row.get('Nota Fiscal'), 'Erro': 'SAIDA_SEM_ENTRADA'})
 
     return pd.DataFrame(erros)
 
