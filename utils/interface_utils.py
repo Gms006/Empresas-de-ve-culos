@@ -3,15 +3,27 @@ import streamlit as st
 import pandas as pd
 import io
 import json
-from filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
-from formatador_utils import (
+
+# Usar importações relativas para funcionar quando ``utils`` é um pacote
+from .filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
+from .formatador_utils import (
     formatar_moeda,
     formatar_percentual,
     formatar_data_curta,
 )
 
-with open("formato_colunas.json", "r", encoding="utf-8") as f:
-    formato = json.load(f)
+# Carregar configurações de formatação se existirem
+try:
+    with open("formato_colunas.json", "r", encoding="utf-8") as f:
+        formato = json.load(f)
+except FileNotFoundError:
+    # Formato básico caso o arquivo não esteja disponível
+    formato = {
+        "moeda": ["Valor", "Lucro"],
+        "percentual": ["%"],
+        "inteiro": [],
+        "texto": [],
+    }
 
 def formatar_df_exibicao(df):
     df = df.copy()
