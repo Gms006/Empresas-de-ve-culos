@@ -4,11 +4,7 @@ import pandas as pd
 import io
 import json
 from filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
-from formatador_utils import (
-    formatar_moeda,
-    formatar_percentual,
-    formatar_data_curta,
-)
+from formatador_utils import formatar_moeda, formatar_percentual
 
 with open("formato_colunas.json", "r", encoding="utf-8") as f:
     formato = json.load(f)
@@ -24,8 +20,6 @@ def formatar_df_exibicao(df):
             df[col] = df[col].apply(formatar_percentual)
         elif col in formato.get("inteiro", []):
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
-        elif any(p in col for p in ["Data", "Mês", "Trimestre"]):
-            df[col] = df[col].apply(formatar_data_curta)
     return df
 
 def criar_aba_padrao(titulo, df, coluna_data=None):
