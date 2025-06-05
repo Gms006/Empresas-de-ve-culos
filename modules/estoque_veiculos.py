@@ -128,12 +128,8 @@ def classificar_tipo_nota(
     cnpj_empresa: Union[str, List[str], None],
     cfop: Optional[str],
 ) -> str:
-    """Classifica a nota como Entrada ou Saída.
-
-    A regra utiliza primeiro o CFOP, quando disponível, e, em caso de
-    incerteza, verifica os CNPJs de emitente e destinatário.
-    """
-
+    """Classifica a nota como entrada ou saída. A prioridade é verificar se o CNPJ do destinatário ou do emitente corresponde ao da empresa. Se não houver coincidência, o CFOP é usado como critério de desempate."""
+    # Prioridade 1: Verificar os CNPJs de emitente e destinatário
     emitente = normalizar_cnpj(emitente_cnpj)
     destinatario = normalizar_cnpj(destinatario_cnpj)
 
@@ -142,26 +138,18 @@ def classificar_tipo_nota(
     else:
         cnpjs_empresa = [normalizar_cnpj(cnpj_empresa)]
 
-    # 1) Analisar CFOP se fornecido
-    if cfop:
-        cfop_str = str(cfop)
-        if cfop_str.startswith(("1", "2")):
-            return "Entrada"
-        if cfop_str.startswith(("5", "6")):
-            return "Saída"
-
-    # 2) Caso o CFOP não seja conclusivo, usar os CNPJs
     if destinatario in cnpjs_empresa:
         return "Entrada"
-    if emitente in cnpjs_empresa:
+    elif emitente in cnpjs_empresa:
         return "Saída"
-
-    log.warning(
-        "CNPJ não identificado como da empresa: Emitente=%s, Destinatario=%s, Empresa=%s. Classificado como Saída por padrão.",
-        emitente,
-        destinatario,
-        cnpj_empresa,
-    )
+    # Prioridade 2: Usar CFOP como critério de desempate
+    if cfop:
+        cfop_str = str(cfop)
+        if cfop_str.startswith(("1","2","3")) or cfop_str in ["1102","2102"]:
+            return "Entrada"
+        elif cfop_str.startswith(("5","6","7")):
+            return "Saída"
+    log.warning(f"CNPJ não identificado como da empresa: Emitente={emitente}, Destinatario={destinatario}, Empresa={cnpj_empresa}. Classificado como Saída por padrão.")
     return "Saída"
 
 def classificar_produto(row: Dict[str, Any]) -> str:
