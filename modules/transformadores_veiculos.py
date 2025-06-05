@@ -40,21 +40,33 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     if 'Empresa CNPJ' in df_entrada.columns and 'Empresa CNPJ' in df_saida.columns:
         merge_cols.append('Empresa CNPJ')
 
+    # Remover duplicidades explícitas de saída para evitar múltiplas associações
     df_saida = df_saida.drop_duplicates(subset=merge_cols)
 
+    # Usar junção externa para identificar saídas sem entradas
     df_estoque = pd.merge(
         df_entrada,
         df_saida,
         on=merge_cols,
-        how='left',
+        how='outer',
         suffixes=('_entrada', '_saida'),
+        indicator=True,
     )
 
+    # Classificação do status do veículo
+    def classificar_status(merge_flag):
+        if merge_flag == 'both':
+            return 'Vendido'
+        elif merge_flag == 'left_only':
+            return 'Em Estoque'
+        return 'Erro'
+
+    df_estoque['Situação'] = df_estoque['_merge'].apply(classificar_status)
+
+    # Renomear coluna de data de saída, se existir
     if 'Data Emissão_saida' in df_estoque.columns:
-        df_estoque['Situação'] = df_estoque['Data Emissão_saida'].notna().map({True: 'Vendido', False: 'Em Estoque'})
         df_estoque.rename(columns={'Data Emissão_saida': 'Data Saída'}, inplace=True)
     else:
-        df_estoque['Situação'] = 'Em Estoque'
         df_estoque['Data Saída'] = pd.NaT
 
     df_estoque['Valor Entrada'] = pd.to_numeric(df_estoque.get('Valor Total_entrada'), errors='coerce').fillna(0)
@@ -88,6 +100,14 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
     for _, row in duplicadas_saida.iterrows():
         if verificar_produto_valido(row.get('Produto', '')):
             erros.append({'Tipo': 'Saída', 'Nota Fiscal': row.get('Nota Fiscal'), 'Erro': 'DUPLICIDADE_SAIDA'})
+
+    # Saída sem correspondente na entrada
+    chaves_entrada = set(df_entrada['Chave'])
+    saidas_sem_entrada = df_saida[~df_saida['Chave'].isin(chaves_entrada)]
+
+    for _, row in saidas_sem_entrada.iterrows():
+        if verificar_produto_valido(row.get('Produto', '')):
+            erros.append({'Tipo': 'Saída', 'Nota Fiscal': row.get('Nota Fiscal'), 'Erro': 'SAIDA_SEM_ENTRADA'})
 
     return pd.DataFrame(erros)
 
