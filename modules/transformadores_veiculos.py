@@ -33,8 +33,17 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     df_entrada = df_entrada.copy()
     df_saida = df_saida.copy()
 
-    df_entrada['Chave'] = df_entrada['Chassi'].fillna('') + df_entrada['Placa'].fillna('')
-    df_saida['Chave'] = df_saida['Chassi'].fillna('') + df_saida['Placa'].fillna('')
+    # Utilizar o chassi como chave de rastreamento principal. Caso o chassi não
+    # esteja disponível, utiliza-se a placa apenas como apoio.
+    df_entrada['Chave'] = df_entrada['Chassi'].fillna('').str.upper()
+    df_saida['Chave'] = df_saida['Chassi'].fillna('').str.upper()
+
+    df_entrada.loc[df_entrada['Chave'] == '', 'Chave'] = (
+        df_entrada['Placa'].fillna('').str.upper()
+    )
+    df_saida.loc[df_saida['Chave'] == '', 'Chave'] = (
+        df_saida['Placa'].fillna('').str.upper()
+    )
 
     merge_cols = ['Chave']
     if 'Empresa CNPJ' in df_entrada.columns and 'Empresa CNPJ' in df_saida.columns:
@@ -87,8 +96,15 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
     df_entrada = df_entrada.copy()
     df_saida = df_saida.copy()
 
-    df_entrada['Chave'] = df_entrada['Chassi'].fillna('') + df_entrada['Placa'].fillna('')
-    df_saida['Chave'] = df_saida['Chassi'].fillna('') + df_saida['Placa'].fillna('')
+    df_entrada['Chave'] = df_entrada['Chassi'].fillna('').str.upper()
+    df_saida['Chave'] = df_saida['Chassi'].fillna('').str.upper()
+
+    df_entrada.loc[df_entrada['Chave'] == '', 'Chave'] = (
+        df_entrada['Placa'].fillna('').str.upper()
+    )
+    df_saida.loc[df_saida['Chave'] == '', 'Chave'] = (
+        df_saida['Placa'].fillna('').str.upper()
+    )
 
     duplicadas_entrada = df_entrada[df_entrada.duplicated('Chave', keep=False)]
     duplicadas_saida = df_saida[df_saida.duplicated('Chave', keep=False)]
