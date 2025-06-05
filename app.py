@@ -24,7 +24,6 @@ from modules.apuracao_fiscal import calcular_apuracao
 # Utilidades
 from utils.filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
 from utils.formatador_utils import formatar_moeda, formatar_percentual
-from utils.interface_utils import formatar_df_exibicao
 
 # Configuração da página
 st.set_page_config(
@@ -379,41 +378,36 @@ if st.session_state.dados_processados:
         if 'Data Emissão_entrada' in st.session_state.df_estoque.columns:
             filtro_cols = st.columns(3)
             with filtro_cols[0]:
-                anos_disp, meses_disp = obter_anos_meses_unicos(
-                    st.session_state.df_estoque,
-                    'Data Emissão_entrada',
-                )
-                ano_selecionado = st.selectbox(
-                    "Ano", [None] + anos_disp, key="estoque_ano"
-                )
-
+                anos_disponiveis = sorted(pd.to_datetime(
+                    st.session_state.df_estoque['Data Emissão_entrada']).dt.year.unique().tolist())
+                ano_selecionado = st.selectbox("Ano", [None] + anos_disponiveis, key="estoque_ano")
+            
             with filtro_cols[1]:
-                mes_selecionado = st.selectbox(
-                    "Mês", [None] + meses_disp, key="estoque_mes"
-                )
+                meses_disponiveis = list(range(1, 13))
+                mes_selecionado = st.selectbox("Mês", [None] + meses_disponiveis, key="estoque_mes")
                 
             with filtro_cols[2]:
                 situacao_opcoes = ['Todos', 'Em Estoque', 'Vendido']
                 situacao_selecionada = st.selectbox("Situação", situacao_opcoes, key="estoque_situacao")
             
             # Aplicar filtros
-            df_estoque_filtrado = aplicar_filtro_periodo(
-                st.session_state.df_estoque,
-                'Data Emissão_entrada',
-                ano_selecionado,
-                mes_selecionado,
-            )
+            df_estoque_filtrado = st.session_state.df_estoque.copy()
+            
+            if ano_selecionado:
+                df_estoque_filtrado = df_estoque_filtrado[
+                    pd.to_datetime(df_estoque_filtrado['Data Emissão_entrada']).dt.year == ano_selecionado]
+            
+            if mes_selecionado:
+                df_estoque_filtrado = df_estoque_filtrado[
+                    pd.to_datetime(df_estoque_filtrado['Data Emissão_entrada']).dt.month == mes_selecionado]
                 
             if situacao_selecionada != 'Todos':
                 df_estoque_filtrado = df_estoque_filtrado[df_estoque_filtrado['Situação'] == situacao_selecionada]
         else:
             df_estoque_filtrado = st.session_state.df_estoque
         
-        # Mostrar tabela de estoque com formatação amigável
-        st.dataframe(
-            formatar_df_exibicao(df_estoque_filtrado),
-            use_container_width=True,
-        )
+        # Mostrar tabela de estoque
+        st.dataframe(df_estoque_filtrado, use_container_width=True)
         
         # Botão para download
         st.download_button(
@@ -427,10 +421,7 @@ if st.session_state.dados_processados:
         st.markdown('<div class="sub-header">🕵️ Relatório de Auditoria</div>', unsafe_allow_html=True)
         
         if not st.session_state.df_alertas.empty:
-            st.dataframe(
-                formatar_df_exibicao(st.session_state.df_alertas),
-                use_container_width=True,
-            )
+            st.dataframe(st.session_state.df_alertas, use_container_width=True)
             
             # Mostrar alertas críticos
             alertas_criticos = st.session_state.df_alertas.shape[0]
@@ -465,10 +456,7 @@ if st.session_state.dados_processados:
             
             # Mostrar tabela de resumo mensal
             st.markdown("### 📅 Resumo Mensal")
-            st.dataframe(
-                formatar_df_exibicao(st.session_state.df_resumo),
-                use_container_width=True,
-            )
+            st.dataframe(st.session_state.df_resumo, use_container_width=True)
             
             st.download_button(
                 label="📥 Baixar Resumo Mensal",
@@ -484,10 +472,7 @@ if st.session_state.dados_processados:
         
         if not st.session_state.df_apuracao.empty:
             # Mostrar tabela de apuração fiscal
-            st.dataframe(
-                formatar_df_exibicao(st.session_state.df_apuracao),
-                use_container_width=True,
-            )
+            st.dataframe(st.session_state.df_apuracao, use_container_width=True)
             
             # Explicação do cálculo
             st.markdown("""
