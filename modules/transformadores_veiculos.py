@@ -36,9 +36,19 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     df_entrada['Chave'] = df_entrada['Chassi'].fillna('') + df_entrada['Placa'].fillna('')
     df_saida['Chave'] = df_saida['Chassi'].fillna('') + df_saida['Placa'].fillna('')
 
-    df_saida = df_saida.drop_duplicates(subset='Chave')
+    merge_cols = ['Chave']
+    if 'Empresa CNPJ' in df_entrada.columns and 'Empresa CNPJ' in df_saida.columns:
+        merge_cols.append('Empresa CNPJ')
 
-    df_estoque = pd.merge(df_entrada, df_saida, on='Chave', how='left', suffixes=('_entrada', '_saida'))
+    df_saida = df_saida.drop_duplicates(subset=merge_cols)
+
+    df_estoque = pd.merge(
+        df_entrada,
+        df_saida,
+        on=merge_cols,
+        how='left',
+        suffixes=('_entrada', '_saida'),
+    )
 
     if 'Data Emissão_saida' in df_estoque.columns:
         df_estoque['Situação'] = df_estoque['Data Emissão_saida'].notna().map({True: 'Vendido', False: 'Em Estoque'})
