@@ -2,6 +2,7 @@ import pandas as pd
 import json
 import logging
 import os
+import re
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -29,20 +30,38 @@ def verificar_produto_valido(produto):
     return False
 
 # Gerar Estoque Fiscal
+def _limpar_chave(valor: str) -> str:
+    """Remove caracteres não alfanuméricos e aplica caixa alta."""
+    if valor is None:
+        return ""
+    return re.sub(r"\W", "", str(valor)).upper()
+
+
 def gerar_estoque_fiscal(df_entrada, df_saida):
     df_entrada = df_entrada.copy()
     df_saida = df_saida.copy()
 
+    if 'Tipo Produto' in df_entrada.columns:
+        df_entrada = df_entrada[df_entrada['Tipo Produto'] == 'Veículo']
+    if 'Tipo Produto' in df_saida.columns:
+        df_saida = df_saida[df_saida['Tipo Produto'] == 'Veículo']
+
+    # Manter apenas itens classificados como Veículo
+    if "Tipo Produto" in df_entrada.columns:
+        df_entrada = df_entrada[df_entrada["Tipo Produto"] == "Veículo"].copy()
+    if "Tipo Produto" in df_saida.columns:
+        df_saida = df_saida[df_saida["Tipo Produto"] == "Veículo"].copy()
+
     # Utilizar o chassi como chave de rastreamento principal. Caso o chassi não
     # esteja disponível, utiliza-se a placa apenas como apoio.
-    df_entrada['Chave'] = df_entrada['Chassi'].fillna('').str.upper()
-    df_saida['Chave'] = df_saida['Chassi'].fillna('').str.upper()
+    df_entrada['Chave'] = df_entrada['Chassi'].apply(_limpar_chave)
+    df_saida['Chave'] = df_saida['Chassi'].apply(_limpar_chave)
 
     df_entrada.loc[df_entrada['Chave'] == '', 'Chave'] = (
-        df_entrada['Placa'].fillna('').str.upper()
+        df_entrada['Placa'].apply(_limpar_chave)
     )
     df_saida.loc[df_saida['Chave'] == '', 'Chave'] = (
-        df_saida['Placa'].fillna('').str.upper()
+        df_saida['Placa'].apply(_limpar_chave)
     )
 
     merge_cols = ['Chave']
@@ -83,9 +102,21 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     df_estoque['Lucro'] = df_estoque['Valor Venda'] - df_estoque['Valor Entrada']
 
     if 'Data Emissão_entrada' in df_estoque.columns:
-        df_estoque['Mês Entrada'] = pd.to_datetime(df_estoque['Data Emissão_entrada'], errors='coerce').dt.to_period('M').dt.start_time
+        df_estoque['Mês Entrada'] = pd.to_datetime(
+            df_estoque['Data Emissão_entrada'], errors='coerce'
+        ).dt.to_period('M').dt.start_time
     if 'Data Saída' in df_estoque.columns:
-        df_estoque['Mês Saída'] = pd.to_datetime(df_estoque['Data Saída'], errors='coerce').dt.to_period('M').dt.start_time
+        df_estoque['Mês Saída'] = pd.to_datetime(
+            df_estoque['Data Saída'], errors='coerce'
+        ).dt.to_period('M').dt.start_time
+
+    # Coluna base para filtros
+    df_estoque['Data Base'] = df_estoque['Data Saída'].combine_first(
+        df_estoque.get('Data Emissão_entrada')
+    )
+    df_estoque['Mês Base'] = pd.to_datetime(
+        df_estoque['Data Base'], errors='coerce'
+    ).dt.to_period('M').dt.start_time
 
     return df_estoque
 
@@ -96,14 +127,14 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
     df_entrada = df_entrada.copy()
     df_saida = df_saida.copy()
 
-    df_entrada['Chave'] = df_entrada['Chassi'].fillna('').str.upper()
-    df_saida['Chave'] = df_saida['Chassi'].fillna('').str.upper()
+    df_entrada['Chave'] = df_entrada['Chassi'].apply(_limpar_chave)
+    df_saida['Chave'] = df_saida['Chassi'].apply(_limpar_chave)
 
     df_entrada.loc[df_entrada['Chave'] == '', 'Chave'] = (
-        df_entrada['Placa'].fillna('').str.upper()
+        df_entrada['Placa'].apply(_limpar_chave)
     )
     df_saida.loc[df_saida['Chave'] == '', 'Chave'] = (
-        df_saida['Placa'].fillna('').str.upper()
+        df_saida['Placa'].apply(_limpar_chave)
     )
 
     duplicadas_entrada = df_entrada[df_entrada.duplicated('Chave', keep=False)]
@@ -138,7 +169,9 @@ def gerar_kpis(df_estoque):
 # Gerar Resumo Mensal
 def gerar_resumo_mensal(df_estoque):
     df = df_estoque.copy()
-    df['Mês Resumo'] = df['Mês Saída'].fillna(df['Mês Entrada'])
+    # Usar o mês base calculado no estoque
+    base_col = 'Mês Base' if 'Mês Base' in df.columns else 'Mês Saída'
+    df['Mês Resumo'] = df[base_col].fillna(df.get('Mês Entrada'))
     resumo = (
         df.groupby(['Empresa CNPJ', 'Mês Resumo'])
         .agg({'Valor Entrada': 'sum', 'Valor Venda': 'sum', 'Lucro': 'sum'})

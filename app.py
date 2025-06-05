@@ -376,12 +376,12 @@ if st.session_state.dados_processados:
         st.markdown('<div class="sub-header">📦 Estoque Fiscal</div>', unsafe_allow_html=True)
         
         # Filtros de data para estoque
-        if 'Data Emissão_entrada' in st.session_state.df_estoque.columns:
+        if 'Data Base' in st.session_state.df_estoque.columns:
             filtro_cols = st.columns(3)
             with filtro_cols[0]:
                 anos_disp, meses_disp = obter_anos_meses_unicos(
                     st.session_state.df_estoque,
-                    'Data Emissão_entrada',
+                    'Data Base',
                 )
                 ano_selecionado = st.selectbox(
                     "Ano", [None] + anos_disp, key="estoque_ano"
@@ -399,7 +399,7 @@ if st.session_state.dados_processados:
             # Aplicar filtros
             df_estoque_filtrado = aplicar_filtro_periodo(
                 st.session_state.df_estoque,
-                'Data Emissão_entrada',
+                'Data Base',
                 ano_selecionado,
                 mes_selecionado,
             )
