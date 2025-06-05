@@ -129,9 +129,11 @@ def classificar_tipo_nota(
 ) -> str:
     """Classifica a nota como entrada ou saída.
 
-    A lógica prioriza a relação do CNPJ com a empresa selecionada. CFOP é usado
-    apenas como critério auxiliar quando os CNPJs não permitem determinar o
-    sentido da operação.
+    A lógica segue a priorização do ``main``: o CFOP define o sentido da
+    operação, mas notas onde o destinatário ou emitente correspondem aos CNPJs
+    da empresa sempre prevalecem. Assim, inconsistências de CFOP são corrigidas
+
+    ao verificar os CNPJs antes de aplicar o resultado do CFOP.
     """
 
     # Normalizar CNPJs de comparação
@@ -143,19 +145,24 @@ def classificar_tipo_nota(
     else:
         cnpjs_empresa = [normalizar_cnpj(cnpj_empresa)]
 
-    # Prioridade 1: relação com a empresa
+    # Classificação preliminar via CFOP
+    cfop_class = None
+    if cfop:
+        cfop_str = str(cfop)
+        if cfop_str.startswith(('1', '2', '3')) or cfop_str in ['1102', '2102']:
+            cfop_class = "Entrada"
+        elif cfop_str.startswith(('5', '6', '7')):
+            cfop_class = "Saída"
+
+    # Prioridade: relação com a empresa, sobrepondo o CFOP quando necessário
     if destinatario in cnpjs_empresa:
         return "Entrada"
     if emitente in cnpjs_empresa:
         return "Saída"
 
-    # Prioridade 2: analisar CFOP quando CNPJ não indica relação direta
-    if cfop:
-        cfop_str = str(cfop)
-        if cfop_str.startswith(('1', '2', '3')) or cfop_str in ['1102', '2102']:
-            return "Entrada"
-        if cfop_str.startswith(('5', '6', '7')):
-            return "Saída"
+    # Utilizar classificação por CFOP caso disponível
+    if cfop_class:
+        return cfop_class
 
     # Padrão: considerar como saída e registrar aviso
     log.warning(
@@ -182,11 +189,13 @@ def classificar_produto(row: Dict[str, Any]) -> str:
             return "Veículo"
 
     cfop = str(row.get('CFOP') or "")
-    cfops_veiculo = ['5102', '5405', '5656', '6102', '6405', '6656', '1102', '1405', '1656', '2102', '2405', '2656']
+    cfops_veiculo = [
+        '5102', '5405', '5656', '6102', '6405', '6656',
+        '1102', '1405', '1656', '2102', '2405', '2656'
+    ]
 
-    # CFOP só determina veículo quando a nota é de saída. Entradas sem dados de
-    # veículo devem ser tratadas como consumo.
-    if row.get('Tipo Nota') == 'Saída' and cfop in cfops_veiculo:
+    # CFOP indica veículo apenas quando a nota é de saída
+    if cfop in cfops_veiculo and row.get('Tipo Nota') == 'Saída':
         return "Veículo"
 
     return "Consumo"
