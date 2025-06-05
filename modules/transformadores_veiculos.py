@@ -36,9 +36,19 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     df_entrada['Chave'] = df_entrada['Chassi'].fillna('') + df_entrada['Placa'].fillna('')
     df_saida['Chave'] = df_saida['Chassi'].fillna('') + df_saida['Placa'].fillna('')
 
-    df_saida = df_saida.drop_duplicates(subset='Chave')
+    merge_cols = ['Chave']
+    if 'Empresa CNPJ' in df_entrada.columns and 'Empresa CNPJ' in df_saida.columns:
+        merge_cols.append('Empresa CNPJ')
 
-    df_estoque = pd.merge(df_entrada, df_saida, on='Chave', how='left', suffixes=('_entrada', '_saida'))
+    df_saida = df_saida.drop_duplicates(subset=merge_cols)
+
+    df_estoque = pd.merge(
+        df_entrada,
+        df_saida,
+        on=merge_cols,
+        how='left',
+        suffixes=('_entrada', '_saida'),
+    )
 
     if 'Data Emissão_saida' in df_estoque.columns:
         df_estoque['Situação'] = df_estoque['Data Emissão_saida'].notna().map({True: 'Vendido', False: 'Em Estoque'})
@@ -50,6 +60,11 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     df_estoque['Valor Entrada'] = pd.to_numeric(df_estoque.get('Valor Total_entrada'), errors='coerce').fillna(0)
     df_estoque['Valor Venda'] = pd.to_numeric(df_estoque.get('Valor Total_saida'), errors='coerce').fillna(0)
     df_estoque['Lucro'] = df_estoque['Valor Venda'] - df_estoque['Valor Entrada']
+
+    if 'Data Emissão_entrada' in df_estoque.columns:
+        df_estoque['Mês Entrada'] = pd.to_datetime(df_estoque['Data Emissão_entrada'], errors='coerce').dt.to_period('M').dt.start_time
+    if 'Data Saída' in df_estoque.columns:
+        df_estoque['Mês Saída'] = pd.to_datetime(df_estoque['Data Saída'], errors='coerce').dt.to_period('M').dt.start_time
 
     return df_estoque
 
@@ -86,7 +101,12 @@ def gerar_kpis(df_estoque):
 
 # Gerar Resumo Mensal
 def gerar_resumo_mensal(df_estoque):
-    df = df_estoque[df_estoque['Situação'] == 'Vendido'].copy()
-    df['Mês'] = pd.to_datetime(df['Data Saída'], errors='coerce').dt.to_period("M").dt.start_time
-    resumo = df.groupby('Mês').agg({'Valor Entrada': 'sum', 'Valor Venda': 'sum', 'Lucro': 'sum'}).reset_index()
+    df = df_estoque.copy()
+    df['Mês Resumo'] = df['Mês Saída'].fillna(df['Mês Entrada'])
+    resumo = (
+        df.groupby(['Empresa CNPJ', 'Mês Resumo'])
+        .agg({'Valor Entrada': 'sum', 'Valor Venda': 'sum', 'Lucro': 'sum'})
+        .reset_index()
+        .rename(columns={'Mês Resumo': 'Mês'})
+    )
     return resumo

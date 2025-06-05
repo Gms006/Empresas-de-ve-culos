@@ -121,57 +121,74 @@ def validar_renavam(renavam: Optional[str]) -> bool:
     pattern = re.compile(CONFIG_EXTRACAO["validadores"].get("renavam", r'^\d{9,11}$'))
     return bool(pattern.fullmatch(renavam))
 
-def classificar_tipo_nota(emitente_cnpj: Optional[str], destinatario_cnpj: Optional[str], 
-                         cnpj_empresa: Optional[str], cfop: Optional[str]) -> str:
-    """Classifica a nota como entrada ou saída com base nos CNPJs e CFOP."""
-    # Prioridade 1: Se CFOP começa com 1, 2 ou 3, ou é especificamente 1102 ou 2102, é entrada
+def classificar_tipo_nota(
+    emitente_cnpj: Optional[str],
+    destinatario_cnpj: Optional[str],
+    cnpj_empresa: Union[str, List[str], None],
+    cfop: Optional[str],
+) -> str:
+    """Classifica a nota como entrada ou saída.
+
+    A lógica prioriza a relação do CNPJ com a empresa selecionada. CFOP é usado
+    apenas como critério auxiliar quando os CNPJs não permitem determinar o
+    sentido da operação.
+    """
+
+    # Normalizar CNPJs de comparação
+    emitente = normalizar_cnpj(emitente_cnpj)
+    destinatario = normalizar_cnpj(destinatario_cnpj)
+
+    if isinstance(cnpj_empresa, (list, tuple, set)):
+        cnpjs_empresa = [normalizar_cnpj(c) for c in cnpj_empresa]
+    else:
+        cnpjs_empresa = [normalizar_cnpj(cnpj_empresa)]
+
+    # Prioridade 1: relação com a empresa
+    if destinatario in cnpjs_empresa:
+        return "Entrada"
+    if emitente in cnpjs_empresa:
+        return "Saída"
+
+    # Prioridade 2: analisar CFOP quando CNPJ não indica relação direta
     if cfop:
         cfop_str = str(cfop)
         if cfop_str.startswith(('1', '2', '3')) or cfop_str in ['1102', '2102']:
             return "Entrada"
-        # Se CFOP começa com 5, 6 ou 7, é saída
-        elif cfop_str.startswith(('5', '6', '7')):
+        if cfop_str.startswith(('5', '6', '7')):
             return "Saída"
-            
-    # Prioridade 2: Usar a lógica baseada em CNPJ
-    emitente = normalizar_cnpj(emitente_cnpj)
-    destinatario = normalizar_cnpj(destinatario_cnpj)
-    cnpj_empresa = normalizar_cnpj(cnpj_empresa)
-    
-    if destinatario == cnpj_empresa:
-        return "Entrada"
-    elif emitente == cnpj_empresa:
-        return "Saída"
-    else:
-        # Se não for possível determinar pelo CNPJ, usar uma lógica padrão
-        # Vamos considerar como saída em vez de "Indeterminado"
-        log.warning(f"CNPJ não identificado como da empresa: Emitente={emitente}, Destinatário={destinatario}, Empresa={cnpj_empresa}. Classificado como Saída por padrão.")
-        return "Saída"
+
+    # Padrão: considerar como saída e registrar aviso
+    log.warning(
+        f"CNPJ não identificado como da empresa: Emitente={emitente}, "
+        f"Destinatario={destinatario}, Empresa={cnpj_empresa}. "
+        "Classificado como Saída por padrão."
+    )
+    return "Saída"
 
 def classificar_produto(row: Dict[str, Any]) -> str:
     """Classifica o produto como veículo ou consumo."""
-    # Verifica dados de veículo
+    # Indícios diretos de veículo
     if row.get('Chassi') or row.get('Placa') or row.get('Renavam'):
         return "Veículo"
-    
-    # Verifica descrição do produto
+
     produto = str(row.get('Produto') or "").lower()
     termos_veiculo = [
-        'veículo', 'veiculo', 'automóvel', 'automovel', 'caminhão', 'caminhao', 
+        'veículo', 'veiculo', 'automóvel', 'automovel', 'caminhão', 'caminhao',
         'motocicleta', 'moto', 'camionete', 'caminhonete', 'reboque', 'utilitário'
     ]
-    
+
     for termo in termos_veiculo:
         if termo in produto:
             return "Veículo"
-    
-    # Verificar CFOP típicos de veículos
+
     cfop = str(row.get('CFOP') or "")
     cfops_veiculo = ['5102', '5405', '5656', '6102', '6405', '6656', '1102', '1405', '1656', '2102', '2405', '2656']
-    
-    if cfop in cfops_veiculo:
+
+    # CFOP só determina veículo quando a nota é de saída. Entradas sem dados de
+    # veículo devem ser tratadas como consumo.
+    if row.get('Tipo Nota') == 'Saída' and cfop in cfops_veiculo:
         return "Veículo"
-    
+
     return "Consumo"
 
 def limpar_texto(texto: Optional[str]) -> str:
@@ -182,23 +199,24 @@ def limpar_texto(texto: Optional[str]) -> str:
     texto = re.sub(r'\s+', ' ', texto)  # Remove espaços extras
     return texto
 
-def formatar_data(data_str: Optional[str]) -> Optional[str]:
-    """Formata a data para o padrão brasileiro."""
+def formatar_data(data_str: Optional[str]) -> Optional[datetime]:
+    """Converte strings de data em objetos ``datetime``.
+
+    Manter as datas como ``datetime`` evita conversões repetidas durante as
+    agregações mensais.
+    """
     if not data_str:
         return None
     try:
-        # Tenta diferentes formatos de data que podem aparecer em XMLs de NFe
-        for fmt in ['%Y-%m-%dT%H:%M:%S%z', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d']:
+        for fmt in ["%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"]:
             try:
-                # Remove a parte do fuso horário se existir
-                data_str_limpa = re.sub(r'[-+]\d{2}:\d{2}$', '', data_str)
-                data = datetime.strptime(data_str_limpa, fmt)
-                return data.strftime('%d/%m/%Y')
+                data_str_limpa = re.sub(r"[-+]\d{2}:\d{2}$", "", data_str)
+                return datetime.strptime(data_str_limpa, fmt)
             except ValueError:
                 continue
     except Exception as e:
-        log.warning(f"Erro ao formatar data '{data_str}': {e}")
-    return data_str
+        log.warning(f"Erro ao converter data '{data_str}': {e}")
+    return None
 
 def extrair_placa(texto_completo: str) -> Optional[str]:
     """Extrai a placa de veículo usando regex."""
@@ -301,17 +319,58 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
         xpath_campos = CONFIG_EXTRACAO.get("xpath_campos", {})
         
         # Garantir campos do cabeçalho sempre preenchidos
+        data_emissao = formatar_data(
+            root.findtext(
+                xpath_campos.get('Data Emissão', './/nfe:ide/nfe:dhEmi'),
+                namespaces=ns,
+            )
+        )
+
         cabecalho = {
             'Número NF': num_nf,
-            'Emitente Nome': root.findtext(xpath_campos.get('Emitente Nome', './/nfe:emit/nfe:xNome'), namespaces=ns) or 'Não informado',
-            'Emitente CNPJ': normalizar_cnpj(root.findtext(xpath_campos.get('Emitente CNPJ', './/nfe:emit/nfe:CNPJ'), namespaces=ns)) or 'Não informado',
-            'Destinatario Nome': root.findtext(xpath_campos.get('Destinatario Nome', './/nfe:dest/nfe:xNome'), namespaces=ns) or 'Não informado',
-            'Destinatario CNPJ': normalizar_cnpj(root.findtext(xpath_campos.get('Destinatario CNPJ', './/nfe:dest/nfe:CNPJ'), namespaces=ns)),
-            'Destinatario CPF': normalizar_cnpj(root.findtext(xpath_campos.get('Destinatario CPF', './/nfe:dest/nfe:CPF'), namespaces=ns)),
-            'CFOP': root.findtext(xpath_campos.get('CFOP', './/nfe:det/nfe:prod/nfe:CFOP'), namespaces=ns),
-            'Data Emissão': formatar_data(root.findtext(xpath_campos.get('Data Emissão', './/nfe:ide/nfe:dhEmi'), namespaces=ns)),
-            'Valor Total': root.findtext(xpath_campos.get('Valor Total', './/nfe:total/nfe:ICMSTot/nfe:vNF'), namespaces=ns),
-            'Tipo NF': root.findtext(xpath_campos.get('tpNF', './/nfe:ide/nfe:tpNF'), namespaces=ns)
+            'Emitente Nome': root.findtext(
+                xpath_campos.get('Emitente Nome', './/nfe:emit/nfe:xNome'),
+                namespaces=ns,
+            )
+            or 'Não informado',
+            'Emitente CNPJ': normalizar_cnpj(
+                root.findtext(
+                    xpath_campos.get('Emitente CNPJ', './/nfe:emit/nfe:CNPJ'),
+                    namespaces=ns,
+                )
+            )
+            or 'Não informado',
+            'Destinatario Nome': root.findtext(
+                xpath_campos.get('Destinatario Nome', './/nfe:dest/nfe:xNome'),
+                namespaces=ns,
+            )
+            or 'Não informado',
+            'Destinatario CNPJ': normalizar_cnpj(
+                root.findtext(
+                    xpath_campos.get('Destinatario CNPJ', './/nfe:dest/nfe:CNPJ'),
+                    namespaces=ns,
+                )
+            ),
+            'Destinatario CPF': normalizar_cnpj(
+                root.findtext(
+                    xpath_campos.get('Destinatario CPF', './/nfe:dest/nfe:CPF'),
+                    namespaces=ns,
+                )
+            ),
+            'CFOP': root.findtext(
+                xpath_campos.get('CFOP', './/nfe:det/nfe:prod/nfe:CFOP'),
+                namespaces=ns,
+            ),
+            'Data Emissão': data_emissao,
+            'Mês Emissão': data_emissao.replace(day=1) if data_emissao else None,
+            'Valor Total': root.findtext(
+                xpath_campos.get('Valor Total', './/nfe:total/nfe:ICMSTot/nfe:vNF'),
+                namespaces=ns,
+            ),
+            'Tipo NF': root.findtext(
+                xpath_campos.get('tpNF', './/nfe:ide/nfe:tpNF'),
+                namespaces=ns,
+            ),
         }
 
         log.debug(f"Cabeçalho extraído: {cabecalho}")
@@ -435,7 +494,7 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
         log.error(traceback.format_exc())
         return []
 
-def processar_xmls(xml_paths: List[str], cnpj_empresa: str) -> pd.DataFrame:
+def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) -> pd.DataFrame:
     """Processa múltiplos arquivos XML e retorna um DataFrame consolidado."""
     todos_registros = []
     total_xmls = len(xml_paths)
@@ -488,13 +547,27 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: str) -> pd.DataFrame:
 
     # Classificação e ajustes finais
     log.info("Aplicando classificações e ajustes finais ao DataFrame")
-    df['Tipo Nota'] = df.apply(lambda row: classificar_tipo_nota(
-        row['Emitente CNPJ'], 
-        row['Destinatario CNPJ'], 
-        cnpj_empresa,
-        row.get('CFOP')  # Adicionar CFOP como parâmetro
-    ), axis=1)
+    if isinstance(cnpj_empresa, (list, tuple, set)):
+        cnpj_list = [normalizar_cnpj(c) for c in cnpj_empresa]
+        empresa_padrao = cnpj_list[0] if cnpj_list else None
+    else:
+        empresa_padrao = normalizar_cnpj(cnpj_empresa)
+
+    df['Empresa CNPJ'] = empresa_padrao
+
+    df['Tipo Nota'] = df.apply(
+        lambda row: classificar_tipo_nota(
+            row['Emitente CNPJ'],
+            row['Destinatario CNPJ'],
+            cnpj_empresa,
+            row.get('CFOP'),
+        ),
+        axis=1,
+    )
     df['Tipo Produto'] = df.apply(classificar_produto, axis=1)
+
+    if 'Data Emissão' in df.columns:
+        df['Mês Emissão'] = df['Data Emissão'].dt.to_period('M').dt.start_time
     
     ## Tratamento de tipos de dados conforme especificado no layout_colunas
     log.info("Aplicando conversões de tipo aos dados extraídos")
@@ -541,7 +614,7 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: str) -> pd.DataFrame:
     return df
 
 # Função para facilitar o processamento direto de um diretório
-def processar_diretorio(diretorio: str, cnpj_empresa: str, extensao: str = ".xml") -> pd.DataFrame:
+def processar_diretorio(diretorio: str, cnpj_empresa: Union[str, List[str]], extensao: str = ".xml") -> pd.DataFrame:
     """Processa todos os arquivos XML em um diretório."""
     if not os.path.isdir(diretorio):
         log.error(f"Diretório não encontrado: {diretorio}")
