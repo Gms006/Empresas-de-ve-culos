@@ -127,17 +127,14 @@ def classificar_tipo_nota(
     cnpj_empresa: Union[str, List[str], None],
     cfop: Optional[str],
 ) -> str:
-    """Classifica a nota como entrada ou saída com base nos CNPJs e CFOP."""
-    # Prioridade 1: Se CFOP começa com 1, 2 ou 3, ou é especificamente 1102 ou 2102, é entrada
-    if cfop:
-        cfop_str = str(cfop)
-        if cfop_str.startswith(('1', '2', '3')) or cfop_str in ['1102', '2102']:
-            return "Entrada"
-        # Se CFOP começa com 5, 6 ou 7, é saída
-        elif cfop_str.startswith(('5', '6', '7')):
-            return "Saída"
-            
-    # Prioridade 2: Usar a lógica baseada em CNPJ
+    """Classifica a nota como entrada ou saída.
+
+    A lógica prioriza a relação do CNPJ com a empresa selecionada. CFOP é usado
+    apenas como critério auxiliar quando os CNPJs não permitem determinar o
+    sentido da operação.
+    """
+
+    # Normalizar CNPJs de comparação
     emitente = normalizar_cnpj(emitente_cnpj)
     destinatario = normalizar_cnpj(destinatario_cnpj)
 
@@ -146,40 +143,52 @@ def classificar_tipo_nota(
     else:
         cnpjs_empresa = [normalizar_cnpj(cnpj_empresa)]
 
+    # Prioridade 1: relação com a empresa
     if destinatario in cnpjs_empresa:
         return "Entrada"
-    elif emitente in cnpjs_empresa:
+    if emitente in cnpjs_empresa:
         return "Saída"
-    else:
-        # Se não for possível determinar pelo CNPJ, usar uma lógica padrão
-        # Vamos considerar como saída em vez de "Indeterminado"
-        log.warning(f"CNPJ não identificado como da empresa: Emitente={emitente}, Destinatário={destinatario}, Empresa={cnpj_empresa}. Classificado como Saída por padrão.")
-        return "Saída"
+
+    # Prioridade 2: analisar CFOP quando CNPJ não indica relação direta
+    if cfop:
+        cfop_str = str(cfop)
+        if cfop_str.startswith(('1', '2', '3')) or cfop_str in ['1102', '2102']:
+            return "Entrada"
+        if cfop_str.startswith(('5', '6', '7')):
+            return "Saída"
+
+    # Padrão: considerar como saída e registrar aviso
+    log.warning(
+        f"CNPJ não identificado como da empresa: Emitente={emitente}, "
+        f"Destinatario={destinatario}, Empresa={cnpj_empresa}. "
+        "Classificado como Saída por padrão."
+    )
+    return "Saída"
 
 def classificar_produto(row: Dict[str, Any]) -> str:
     """Classifica o produto como veículo ou consumo."""
-    # Verifica dados de veículo
+    # Indícios diretos de veículo
     if row.get('Chassi') or row.get('Placa') or row.get('Renavam'):
         return "Veículo"
-    
-    # Verifica descrição do produto
+
     produto = str(row.get('Produto') or "").lower()
     termos_veiculo = [
-        'veículo', 'veiculo', 'automóvel', 'automovel', 'caminhão', 'caminhao', 
+        'veículo', 'veiculo', 'automóvel', 'automovel', 'caminhão', 'caminhao',
         'motocicleta', 'moto', 'camionete', 'caminhonete', 'reboque', 'utilitário'
     ]
-    
+
     for termo in termos_veiculo:
         if termo in produto:
             return "Veículo"
-    
-    # Verificar CFOP típicos de veículos
+
     cfop = str(row.get('CFOP') or "")
     cfops_veiculo = ['5102', '5405', '5656', '6102', '6405', '6656', '1102', '1405', '1656', '2102', '2405', '2656']
-    
-    if cfop in cfops_veiculo:
+
+    # CFOP só determina veículo quando a nota é de saída. Entradas sem dados de
+    # veículo devem ser tratadas como consumo.
+    if row.get('Tipo Nota') == 'Saída' and cfop in cfops_veiculo:
         return "Veículo"
-    
+
     return "Consumo"
 
 def limpar_texto(texto: Optional[str]) -> str:
