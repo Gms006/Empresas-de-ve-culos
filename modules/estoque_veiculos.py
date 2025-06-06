@@ -128,49 +128,29 @@ def classificar_tipo_nota(
     cnpj_empresa: Union[str, List[str], None],
     cfop: Optional[str],
 ) -> str:
-    """Classifica a nota como ``Entrada``, ``Saída`` ou ``Indefinido``.
-
-    A análise do CFOP tem prioridade. Caso o CFOP não esteja presente ou não
-    permita determinar o tipo da nota, a classificação por CNPJ é utilizada
-    como fallback.
-    """
-
-    # ------------------------------------------------------------------
-    # Prioridade 1: Analisar CFOP
-    # ------------------------------------------------------------------
-    cfop_str = ""
-    if cfop is not None:
-        try:
-            cfop_str = re.sub(r"\D", "", str(cfop)).strip()
-        except Exception:  # segurança contra entradas malformadas
-            cfop_str = ""
-
-    if cfop_str:
-        if cfop_str.startswith(("1", "2")):
-            return "Entrada"
-        if cfop_str.startswith(("5", "6")):
-            return "Saída"
-        return "Indefinido"
-
-    # ------------------------------------------------------------------
-    # Prioridade 2: Fallback utilizando CNPJ
-    # ------------------------------------------------------------------
+    """Classifica a nota como entrada ou saída. A prioridade é verificar se o CNPJ do destinatário ou do emitente corresponde ao da empresa. Se não houver coincidência, o CFOP é usado como critério de desempate."""
+    # Prioridade 1: Verificar os CNPJs de emitente e destinatário
     emitente = normalizar_cnpj(emitente_cnpj)
     destinatario = normalizar_cnpj(destinatario_cnpj)
 
     if isinstance(cnpj_empresa, (list, tuple, set)):
-        cnpjs_empresa = {normalizar_cnpj(c) for c in cnpj_empresa if normalizar_cnpj(c)}
-    elif cnpj_empresa:
-        cnpjs_empresa = {normalizar_cnpj(cnpj_empresa)}
+        cnpjs_empresa = [normalizar_cnpj(c) for c in cnpj_empresa]
     else:
-        cnpjs_empresa = set()
+        cnpjs_empresa = [normalizar_cnpj(cnpj_empresa)]
 
-    if destinatario and destinatario in cnpjs_empresa:
+    if destinatario in cnpjs_empresa:
         return "Entrada"
-    if emitente and emitente in cnpjs_empresa:
+    elif emitente in cnpjs_empresa:
         return "Saída"
-
-    return "Indefinido"
+    # Prioridade 2: Usar CFOP como critério de desempate
+    if cfop:
+        cfop_str = str(cfop)
+        if cfop_str.startswith(("1","2","3")) or cfop_str in ["1102","2102"]:
+            return "Entrada"
+        elif cfop_str.startswith(("5","6","7")):
+            return "Saída"
+    log.warning(f"CNPJ não identificado como da empresa: Emitente={emitente}, Destinatario={destinatario}, Empresa={cnpj_empresa}. Classificado como Saída por padrão.")
+    return "Saída"
 
 def classificar_produto(row: Dict[str, Any]) -> str:
     """Classifica o item como veículo apenas se houver chassi."""
