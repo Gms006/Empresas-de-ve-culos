@@ -383,6 +383,7 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
             dados.update(cabecalho)
             dados['XML Path'] = xml_path
             dados['Item'] = i
+            dados['CFOP'] = item.findtext('.//nfe:prod/nfe:CFOP', namespaces=ns) or cabecalho.get('CFOP')
             
             # Extrair campos básicos do produto
             xProd = item.findtext('.//nfe:prod/nfe:xProd', namespaces=ns) or ""
