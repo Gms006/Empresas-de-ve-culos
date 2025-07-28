@@ -157,9 +157,14 @@ def gerar_resumo_mensal(df_estoque):
     df = df_estoque.copy()
     # Usar o mês base calculado no estoque
     base_col = 'Mês Base' if 'Mês Base' in df.columns else 'Mês Saída'
-    df['Mês Resumo'] = df[base_col].fillna(df.get('Mês Entrada'))
+    entrada_vals = df.get('Mês Entrada')
+    df['Mês Resumo'] = df[base_col].fillna(entrada_vals if entrada_vals is not None else pd.NaT)
+    group_cols = ['Mês Resumo']
+    if 'Empresa CNPJ' in df.columns:
+        group_cols.insert(0, 'Empresa CNPJ')
+
     resumo = (
-        df.groupby(['Empresa CNPJ', 'Mês Resumo'])
+        df.groupby(group_cols)
         .agg({'Valor Entrada': 'sum', 'Valor Venda': 'sum', 'Lucro': 'sum'})
         .reset_index()
         .rename(columns={'Mês Resumo': 'Mês'})
