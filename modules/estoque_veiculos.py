@@ -36,12 +36,12 @@ except Exception as e:
             "Data Emissão": ".//nfe:ide/nfe:dhEmi",
             "Emitente Nome": ".//nfe:emit/nfe:xNome",
             "Emitente CNPJ": ".//nfe:emit/nfe:CNPJ",
-            "Destinatário Nome": ".//nfe:dest/nfe:xNome",
-            "Destinatário CNPJ": ".//nfe:dest/nfe:CNPJ",
-            "Destinatário CPF": ".//nfe:dest/nfe:CPF",
+            "Destinatario Nome": ".//nfe:dest/nfe:xNome",
+            "Destinatario CNPJ": ".//nfe:dest/nfe:CNPJ",
+            "Destinatario CPF": ".//nfe:dest/nfe:CPF",
             "Valor Total": ".//nfe:total/nfe:ICMSTot/nfe:vNF",
             "Produto": ".//nfe:det/nfe:prod/nfe:xProd",
-            "Natureza Operação": ".//nfe:ide/nfe:natOp"
+            "Natureza Operacao": ".//nfe:ide/nfe:natOp"
         },
         "regex_extracao": {
             "Chassi": r'(?:CHASSI|CHAS|CH)[\s:;.-]*([A-HJ-NPR-Z0-9]{17})',
@@ -67,8 +67,7 @@ except Exception as e:
         "Combustível": {"tipo": "str", "ordem": 16},
         "Potência": {"tipo": "float", "ordem": 17},
         "Modelo": {"tipo": "str", "ordem": 18},
-        "Natureza Operação": {"tipo": "str", "ordem": 19},
-        "CHAVE XML": {"tipo": "str", "ordem": 20}
+        "Natureza Operação": {"tipo": "str", "ordem": 19}
     }
 
 
@@ -321,11 +320,12 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
         xpath_campos = CONFIG_EXTRACAO.get("xpath_campos", {})
         
         # Garantir campos do cabeçalho sempre preenchidos
-        data_emissao_text = (
-            root.findtext(xpath_campos.get('Data Emissão', './/nfe:ide/nfe:dhEmi'), namespaces=ns)
-            or root.findtext('.//nfe:ide/nfe:dEmi', namespaces=ns)
+        data_emissao = formatar_data(
+            root.findtext(
+                xpath_campos.get('Data Emissão', './/nfe:ide/nfe:dhEmi'),
+                namespaces=ns,
+            )
         )
-        data_emissao = formatar_data(data_emissao_text)
 
         cabecalho = {
             'Número NF': num_nf,
@@ -342,38 +342,35 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
                 )
             )
             or 'Não informado',
-            'Destinatário Nome': root.findtext(
-                xpath_campos.get('Destinatário Nome', './/nfe:dest/nfe:xNome'),
+            'Destinatario Nome': root.findtext(
+                xpath_campos.get('Destinatario Nome', './/nfe:dest/nfe:xNome'),
                 namespaces=ns,
             )
             or 'Não informado',
-            'Destinatário CNPJ': normalizar_cnpj(
+            'Destinatario CNPJ': normalizar_cnpj(
                 root.findtext(
-                    xpath_campos.get('Destinatário CNPJ', './/nfe:dest/nfe:CNPJ'),
+                    xpath_campos.get('Destinatario CNPJ', './/nfe:dest/nfe:CNPJ'),
                     namespaces=ns,
                 )
             ),
-            'Destinatário CPF': normalizar_cnpj(
+            'Destinatario CPF': normalizar_cnpj(
                 root.findtext(
-                    xpath_campos.get('Destinatário CPF', './/nfe:dest/nfe:CPF'),
+                    xpath_campos.get('Destinatario CPF', './/nfe:dest/nfe:CPF'),
                     namespaces=ns,
                 )
             ),
-            'CFOP': (
-                root.findtext(
-                    xpath_campos.get('CFOP', './/nfe:det/nfe:prod/nfe:CFOP'),
-                    namespaces=ns,
-                )
-                or root.findtext('.//CFOP', namespaces=ns)
+            'CFOP': root.findtext(
+                xpath_campos.get('CFOP', './/nfe:det/nfe:prod/nfe:CFOP'),
+                namespaces=ns,
             ),
             'Data Emissão': data_emissao,
-            'Mês Emissão': data_emissao.strftime('%m/%Y') if data_emissao else None,
+            'Mês Emissão': data_emissao.replace(day=1) if data_emissao else None,
             'Valor Total': root.findtext(
                 xpath_campos.get('Valor Total', './/nfe:total/nfe:ICMSTot/nfe:vNF'),
                 namespaces=ns,
             ),
             'Natureza Operação': root.findtext(
-                xpath_campos.get('Natureza Operação', './/nfe:ide/nfe:natOp'),
+                xpath_campos.get('Natureza Operacao', './/nfe:ide/nfe:natOp'),
                 namespaces=ns,
             ),
         }
@@ -573,7 +570,7 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
     df['Tipo Nota'] = df.apply(
         lambda row: classificar_tipo_nota(
             row['Emitente CNPJ'],
-            row['Destinatário CNPJ'],
+            row['Destinatario CNPJ'],
             cnpj_empresa,
             row.get('CFOP'),
         ),
@@ -582,9 +579,7 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
     df['Tipo Produto'] = df.apply(classificar_produto, axis=1)
 
     if 'Data Emissão' in df.columns:
-        df['Mês Emissão'] = pd.to_datetime(
-            df['Data Emissão'], errors='coerce'
-        ).dt.strftime('%m/%Y')
+        df['Mês Emissão'] = df['Data Emissão'].dt.to_period('M').dt.start_time
    
     # Aplicar configuração de layout e tipagem
     df = configurar_planilha(df)
