@@ -77,7 +77,6 @@ except Exception as e:
         "CHAVE XML": {"tipo": "str", "ordem": 100}
     }
 
-
 # Pré-compilar as expressões regulares para melhor performance
 REGEX_COMPILADOS = {}
 try:
