@@ -12,5 +12,7 @@
   "KM": {"tipo": "int", "ordem": 11},
   "Ano Modelo": {"tipo": "int", "ordem": 12},
   "Ano Fabricação": {"tipo": "int", "ordem": 13},
-  "Cor": {"tipo": "str", "ordem": 14}
+  "Cor": {"tipo": "str", "ordem": 14},
+  "ICMS": {"tipo": "float", "ordem": 15},
+  "CHAVE XML": {"tipo": "str", "ordem": 16}
 }
