@@ -73,7 +73,6 @@ def test_processar_xmls_filters_columns(tmp_path):
     xml_file = tmp_path / "nota.xml"
     xml_file.write_text(xml_content, encoding="utf-8")
     df = ev.processar_xmls([str(xml_file)], "12345678000199")
-
     ordered = sorted(ev.LAYOUT_COLUNAS.items(), key=lambda x: x[1]["ordem"])
     base_cols = [c for c, _ in ordered]
     extras = ["Empresa CNPJ", "Tipo Produto", "Mês Emissão"]
@@ -119,4 +118,3 @@ def test_mes_emissao_format(tmp_path):
 
     df = ev.processar_xmls([str(xml_file)], "12345678000199")
     assert df.loc[0, "Mês Emissão"] == "07/2023"
-
