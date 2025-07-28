@@ -27,6 +27,7 @@ except Exception:
         "Ano Fabricação": {"tipo": "int", "ordem": 13},
         "Cor": {"tipo": "str", "ordem": 14},
         "Natureza Operação": {"tipo": "str", "ordem": 15},
+        "CHAVE XML": {"tipo": "str", "ordem": 16},
     }
 
 def configurar_planilha(df):
