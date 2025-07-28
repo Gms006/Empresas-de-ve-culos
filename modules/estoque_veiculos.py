@@ -267,6 +267,7 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
         xpath_campos = CONFIG_EXTRACAO.get("xpath_campos", {})
         
         # Garantir campos do cabeçalho sempre preenchidos
+
         data_emissao = formatar_data(
             root.findtext(
                 xpath_campos.get('Data Emissão', './/nfe:ide/nfe:dhEmi'),
@@ -274,8 +275,20 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
             )
         )
 
+        # Chave da NFe
+        chave_xml = None
+        chave_xpath = xpath_campos.get('CHAVE XML', './/nfe:infNFe/@Id')
+        if '@' in chave_xpath:
+            elem_path, attr = chave_xpath.rsplit('/@', 1)
+            elem = root.find(elem_path, ns)
+            if elem is not None:
+                chave_xml = elem.attrib.get(attr)
+        else:
+            chave_xml = root.findtext(chave_xpath, namespaces=ns)
+
         cabecalho = {
             'Número NF': num_nf,
+            'CHAVE XML': chave_xml,
             'Emitente Nome': root.findtext(
                 xpath_campos.get('Emitente Nome', './/nfe:emit/nfe:xNome'),
                 namespaces=ns,
@@ -351,8 +364,18 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
             produto_completo = f"{xProd} {infAdProd} {infos_gerais}".strip()
             
             dados['Produto'] = limpar_texto(xProd)
-            
+
             log.debug(f"Processando item {i}: {dados['Produto'][:50]}...")
+
+            # Valor do ICMS do item
+            try:
+                icms_text = item.findtext(
+                    xpath_campos.get('ICMS', './/nfe:imposto/nfe:ICMS//nfe:vICMS'),
+                    namespaces=ns,
+                )
+                dados['ICMS'] = float(icms_text) if icms_text is not None else None
+            except Exception as e:
+                log.warning(f"Erro ao processar ICMS do item: {e}")
 
             # Procurar diretamente campos de veículo na estrutura XML
             try:
