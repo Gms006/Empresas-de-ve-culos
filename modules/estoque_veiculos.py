@@ -9,12 +9,6 @@ from modules.configurador_planilha import configurar_planilha
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
 
-# Configuração de Logs
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
 log = logging.getLogger(__name__)
 
 # Caminhos de configuração
@@ -600,8 +594,15 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
     log.info(f"Estatísticas finais: {veiculos} veículos, {consumo} itens de consumo")
     log.info(f"Dados de identificação: {com_chassi} com chassi, {com_placa} com placa, {com_renavam} com renavam")
 
-    # Manter apenas as colunas configuradas
-    df = df.reindex(columns=list(LAYOUT_COLUNAS.keys()))
+    # Manter apenas as colunas configuradas e extras de classificação
+    colunas_base = list(LAYOUT_COLUNAS.keys())
+    colunas_extra = [
+        "Empresa CNPJ",
+        "Tipo Nota",
+        "Tipo Produto",
+        "Mês Emissão",
+    ]
+    df = df.reindex(columns=colunas_base + colunas_extra)
 
     return df
   
@@ -729,7 +730,12 @@ def exportar_para_excel(df: pd.DataFrame, caminho_saida: str) -> bool:
 # Exemplo de uso
 if __name__ == "__main__":
     import argparse
-    
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
     parser = argparse.ArgumentParser(description="Extração de dados de Notas Fiscais Eletrônicas (XML)")
     parser.add_argument("--dir", type=str, help="Diretório contendo arquivos XML")
     parser.add_argument("--xml", type=str, nargs="+", help="Caminhos de arquivos XML específicos")
