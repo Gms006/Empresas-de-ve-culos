@@ -6,6 +6,7 @@ import logging
 import os
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
+from modules.configurador_planilha import configurar_planilha
 
 
 # Configuração de Logs
@@ -19,60 +20,12 @@ log = logging.getLogger(__name__)
 # Caminhos de configuração
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config')
 
-# Carregamento de configurações com tratamento de erros
-try:
-    with open(os.path.join(CONFIG_PATH, 'extracao_config.json'), encoding='utf-8') as f:
-        CONFIG_EXTRACAO = json.load(f)
+# Carregamento de configurações
+with open(os.path.join(CONFIG_PATH, 'extracao_config.json'), encoding='utf-8') as f:
+    CONFIG_EXTRACAO = json.load(f)
 
-    with open(os.path.join(CONFIG_PATH, 'layout_colunas.json'), encoding='utf-8') as f:
-        LAYOUT_COLUNAS = json.load(f)
-except Exception as e:
-    log.error(f"Erro ao carregar arquivos de configuração: {e}")
-    # Definir configurações padrão caso ocorra erro na leitura
-    CONFIG_EXTRACAO = {
-        "validadores": {
-            "chassi": r'^[A-HJ-NPR-Z0-9]{17}$',
-            "placa_mercosul": r'^[A-Z]{3}[0-9][A-Z][0-9]{2}$',
-            "placa_antiga": r'^[A-Z]{3}[0-9]{4}$',
-            "renavam": r'^\d{9,11}$'
-        },
-        "xpath_campos": {
-            "CFOP": ".//nfe:det/nfe:prod/nfe:CFOP",
-            "Data Emissão": ".//nfe:ide/nfe:dhEmi",
-            "Emitente Nome": ".//nfe:emit/nfe:xNome",
-            "Emitente CNPJ": ".//nfe:emit/nfe:CNPJ",
-            "Destinatario Nome": ".//nfe:dest/nfe:xNome",
-            "Destinatario CNPJ": ".//nfe:dest/nfe:CNPJ",
-            "Destinatario CPF": ".//nfe:dest/nfe:CPF",
-            "Valor Total": ".//nfe:total/nfe:ICMSTot/nfe:vNF",
-            "Produto": ".//nfe:det/nfe:prod/nfe:xProd",
-            "tpNF": ".//nfe:ide/nfe:tpNF"
-        },
-        "regex_extracao": {
-            "Chassi": r'(?:CHASSI|CHAS|CH)[\s:;.-]*([A-HJ-NPR-Z0-9]{17})',
-            "Placa": r'(?:PLACA|PL)[\s:;.-]*([A-Z]{3}[0-9][A-Z0-9][0-9]{2})|(?:PLACA|PL)[\s:;.-]*([A-Z]{3}-?[0-9]{4})',
-            "Renavam": r'(?:RENAVAM|REN|RENAV)[\s:;.-]*([0-9]{9,11})',
-            "KM": r'(?:KM|QUILOMETRAGEM|HODOMETRO|HODÔMETRO)[\s:;.-]*([0-9]{1,7})',
-            "Ano Modelo": r'(?:ANO[\s/]*MODELO|ANO[\s/]?FAB[\s/]?MOD)[\s:;.-]*([0-9]{4})[\s/.-]+([0-9]{4})|ANO[\s:;.-]*([0-9]{4})[\s/.-]+([0-9]{4})',
-            "Cor": r'(?:COR|COLOR)[\s:;.-]*([A-Za-zÀ-ú\s]+?)(?:[\s,.;]|$)',
-            "Motor": r'(?:MOTOR|MOT|N[º°\s]?\s*MOTOR)[\s:;.-]*([A-Z0-9]+)',
-            "Combustível": r'(?:COMBUSTÍVEL|COMBUSTIVEL|COMB)[\s:;.-]*([A-Za-zÀ-ú\s/]+?)(?:[\s,.;]|$)',
-            "Modelo": r'(?:MODELO|MOD)[\s:;.-]*([A-Za-zÀ-ú0-9\s\.-]+?)(?:[\s,.;]|$)',
-            "Potência": r'(?:POTÊNCIA|POTENCIA|POT)[\s:;.-]*([0-9]+(?:[,.][0-9]+)?)'
-        }
-    }
-    LAYOUT_COLUNAS = {
-        "Chassi": {"tipo": "str", "ordem": 8}, 
-        "Placa": {"tipo": "str", "ordem": 9}, 
-        "Renavam": {"tipo": "str", "ordem": 10}, 
-        "Ano Fabricação": {"tipo": "int", "ordem": 13}, 
-        "Ano Modelo": {"tipo": "int", "ordem": 12}, 
-        "Motor": {"tipo": "str", "ordem": 15}, 
-        "Cor": {"tipo": "str", "ordem": 14}, 
-        "Combustível": {"tipo": "str", "ordem": 16},
-        "Potência": {"tipo": "float", "ordem": 17}, 
-        "Modelo": {"tipo": "str", "ordem": 18}
-    }
+with open(os.path.join(CONFIG_PATH, 'layout_colunas.json'), encoding='utf-8') as f:
+    LAYOUT_COLUNAS = json.load(f)
 
 # Pré-compilar as expressões regulares para melhor performance
 REGEX_COMPILADOS = {}
@@ -565,37 +518,8 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
     if 'Data Emissão' in df.columns:
         df['Mês Emissão'] = df['Data Emissão'].dt.to_period('M').dt.start_time
     
-    ## Tratamento de tipos de dados conforme especificado no layout_colunas
-    log.info("Aplicando conversões de tipo aos dados extraídos")
-    for coluna, info in LAYOUT_COLUNAS.items():
-        if coluna not in df.columns:
-            continue
-            
-        tipo = info.get("tipo")
-        try:
-            if tipo == "int":
-                df[coluna] = pd.to_numeric(df[coluna], errors='coerce').fillna(0).astype('Int64')
-            elif tipo == "float":
-                df[coluna] = pd.to_numeric(df[coluna], errors='coerce')
-            elif tipo == "date":
-                # Já formatado em formatar_data
-                pass
-            # Tipo string é o padrão, não precisa converter
-        except Exception as e:
-            log.warning(f"Erro ao converter coluna {coluna} para tipo {tipo}: {e}")
-    
-    # Ordenar colunas conforme definido no layout_colunas
-    try:
-        cols_ordenadas = sorted(
-            [col for col in df.columns if col in LAYOUT_COLUNAS],
-            key=lambda x: LAYOUT_COLUNAS[x].get("ordem", 999)
-        )
-        # Adicionar colunas que não estão no layout mas existem no DataFrame
-        outras_colunas = [col for col in df.columns if col not in LAYOUT_COLUNAS]
-        todas_colunas = cols_ordenadas + outras_colunas
-        df = df[todas_colunas]
-    except Exception as e:
-        log.warning(f"Erro ao ordenar colunas: {e}")
+    # Aplicar configuração de layout e tipagem
+    df = configurar_planilha(df)
     
     # Estatísticas para validação
     veiculos = df[df['Tipo Produto'] == 'Veículo'].shape[0]
