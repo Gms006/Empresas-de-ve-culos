@@ -47,9 +47,11 @@ except Exception as e:
             "Destinatario Nome": ".//nfe:dest/nfe:xNome",
             "Destinatario CNPJ": ".//nfe:dest/nfe:CNPJ",
             "Destinatario CPF": ".//nfe:dest/nfe:CPF",
+
             "Valor Total": ".//nfe:total/nfe:ICMSTot/nfe:vNF",
             "Produto": ".//nfe:det/nfe:prod/nfe:xProd",
             "Natureza Operacao": ".//nfe:ide/nfe:natOp"
+
         },
         "regex_extracao": {
             "Chassi": r'(?:CHASSI|CHAS|CH)[\s:;.-]*([A-HJ-NPR-Z0-9]{17})',
@@ -77,6 +79,8 @@ except Exception as e:
         "Modelo": {"tipo": "str", "ordem": 18},
         "Natureza Operação": {"tipo": "str", "ordem": 19}
     }
+
+
 # Pré-compilar as expressões regulares para melhor performance
 REGEX_COMPILADOS = {}
 try:
@@ -317,13 +321,60 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
         xpath_campos = CONFIG_EXTRACAO.get("xpath_campos", {})
         
         # Garantir campos do cabeçalho sempre preenchidos
-        
+
         data_emissao = formatar_data(
             root.findtext(
                 xpath_campos.get('Data Emissão', './/nfe:ide/nfe:dhEmi'),
                 namespaces=ns,
             )
         )
+
+        cabecalho = {
+            'Número NF': num_nf,
+            'Emitente Nome': root.findtext(
+                xpath_campos.get('Emitente Nome', './/nfe:emit/nfe:xNome'),
+                namespaces=ns,
+            )
+            or 'Não informado',
+            'Emitente CNPJ': normalizar_cnpj(
+                root.findtext(
+                    xpath_campos.get('Emitente CNPJ', './/nfe:emit/nfe:CNPJ'),
+                    namespaces=ns,
+                )
+            )
+            or 'Não informado',
+            'Destinatario Nome': root.findtext(
+                xpath_campos.get('Destinatario Nome', './/nfe:dest/nfe:xNome'),
+                namespaces=ns,
+            )
+            or 'Não informado',
+            'Destinatario CNPJ': normalizar_cnpj(
+                root.findtext(
+                    xpath_campos.get('Destinatario CNPJ', './/nfe:dest/nfe:CNPJ'),
+                    namespaces=ns,
+                )
+            ),
+            'Destinatario CPF': normalizar_cnpj(
+                root.findtext(
+                    xpath_campos.get('Destinatario CPF', './/nfe:dest/nfe:CPF'),
+                    namespaces=ns,
+                )
+            ),
+            'CFOP': root.findtext(
+                xpath_campos.get('CFOP', './/nfe:det/nfe:prod/nfe:CFOP'),
+                namespaces=ns,
+            ),
+            'Data Emissão': data_emissao,
+            'Mês Emissão': data_emissao.replace(day=1) if data_emissao else None,
+            'Valor Total': root.findtext(
+                xpath_campos.get('Valor Total', './/nfe:total/nfe:ICMSTot/nfe:vNF'),
+                namespaces=ns,
+            ),
+            'Natureza Operação': root.findtext(
+                xpath_campos.get('Natureza Operacao', './/nfe:ide/nfe:natOp'),
+                namespaces=ns,
+            ),
+        }
 
         cabecalho = {
             'Número NF': num_nf,
