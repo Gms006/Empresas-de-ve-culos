@@ -517,7 +517,7 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
 
     if 'Data Emissão' in df.columns:
         df['Mês Emissão'] = df['Data Emissão'].dt.to_period('M').dt.start_time
-    
+   
     # Aplicar configuração de layout e tipagem
     df = configurar_planilha(df)
     
@@ -597,9 +597,6 @@ def exportar_para_excel(df: pd.DataFrame, caminho_saida: str) -> bool:
             'valign': 'top'
         })
         
-        formato_consumo = workbook.add_format({
-            'valign': 'top'
-        })
         
         formato_numero = workbook.add_format({
             'num_format': '#,##0.00',

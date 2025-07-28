@@ -3,7 +3,5 @@ pandas
 openpyxl
 lxml
 xlsxwriter
-logging
-matplotlib 
+matplotlib
 seaborn
-PyYAML
