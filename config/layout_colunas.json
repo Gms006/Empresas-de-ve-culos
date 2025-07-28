@@ -1,4 +1,5 @@
 {
+
   "CFOP": {"tipo": "str", "ordem": 1},
   "Data Emissão": {"tipo": "date", "ordem": 2},
   "Valor Total": {"tipo": "float", "ordem": 3},
@@ -14,4 +15,3 @@
   "Ano Fabricação": {"tipo": "int", "ordem": 13},
   "Cor": {"tipo": "str", "ordem": 14},
   "Natureza Operação": {"tipo": "str", "ordem": 15}
-}
