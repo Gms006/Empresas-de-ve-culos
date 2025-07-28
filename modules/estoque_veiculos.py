@@ -1,13 +1,15 @@
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'modules'))
+
 import pandas as pd
 import xml.etree.ElementTree as ET
 import json
 import re
 import logging
-import os
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
-from modules.configurador_planilha import configurar_planilha
-
+from configurador_planilha import configurar_planilha
 
 # Configuração de Logs
 logging.basicConfig(
@@ -21,8 +23,9 @@ log = logging.getLogger(__name__)
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config')
 
 # Carregamento de configurações
-with open(os.path.join(CONFIG_PATH, 'extracao_config.json'), encoding='utf-8') as f:
-    CONFIG_EXTRACAO = json.load(f)
+try:
+    with open(os.path.join(CONFIG_PATH, 'extracao_config.json'), encoding='utf-8') as f:
+        CONFIG_EXTRACAO = json.load(f)
 
     with open(os.path.join(CONFIG_PATH, 'layout_colunas.json'), encoding='utf-8') as f:
         LAYOUT_COLUNAS = json.load(f)
