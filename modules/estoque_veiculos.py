@@ -24,8 +24,56 @@ CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config')
 with open(os.path.join(CONFIG_PATH, 'extracao_config.json'), encoding='utf-8') as f:
     CONFIG_EXTRACAO = json.load(f)
 
-with open(os.path.join(CONFIG_PATH, 'layout_colunas.json'), encoding='utf-8') as f:
-    LAYOUT_COLUNAS = json.load(f)
+    with open(os.path.join(CONFIG_PATH, 'layout_colunas.json'), encoding='utf-8') as f:
+        LAYOUT_COLUNAS = json.load(f)
+except Exception as e:
+    log.error(f"Erro ao carregar arquivos de configuração: {e}")
+    # Definir configurações padrão caso ocorra erro na leitura
+    CONFIG_EXTRACAO = {
+        "validadores": {
+            "chassi": r'^[A-HJ-NPR-Z0-9]{17}$',
+            "placa_mercosul": r'^[A-Z]{3}[0-9][A-Z][0-9]{2}$',
+            "placa_antiga": r'^[A-Z]{3}[0-9]{4}$',
+            "renavam": r'^\d{9,11}$'
+        },
+        "xpath_campos": {
+            "CFOP": ".//nfe:det/nfe:prod/nfe:CFOP",
+            "Data Emissão": ".//nfe:ide/nfe:dhEmi",
+            "Emitente Nome": ".//nfe:emit/nfe:xNome",
+            "Emitente CNPJ": ".//nfe:emit/nfe:CNPJ",
+            "Destinatario Nome": ".//nfe:dest/nfe:xNome",
+            "Destinatario CNPJ": ".//nfe:dest/nfe:CNPJ",
+            "Destinatario CPF": ".//nfe:dest/nfe:CPF",
+            "Valor Total": ".//nfe:total/nfe:ICMSTot/nfe:vNF",
+            "Produto": ".//nfe:det/nfe:prod/nfe:xProd",
+            "tpNF": ".//nfe:ide/nfe:tpNF"
+        },
+        "regex_extracao": {
+            "Chassi": r'(?:CHASSI|CHAS|CH)[\s:;.-]*([A-HJ-NPR-Z0-9]{17})',
+            "Placa": r'(?:PLACA|PL)[\s:;.-]*([A-Z]{3}[0-9][A-Z0-9][0-9]{2})|(?:PLACA|PL)[\s:;.-]*([A-Z]{3}-?[0-9]{4})',
+            "Renavam": r'(?:RENAVAM|REN|RENAV)[\s:;.-]*([0-9]{9,11})',
+            "KM": r'(?:KM|QUILOMETRAGEM|HODOMETRO|HODÔMETRO)[\s:;.-]*([0-9]{1,7})',
+            "Ano Modelo": r'(?:ANO[\s/]*MODELO|ANO[\s/]?FAB[\s/]?MOD)[\s:;.-]*([0-9]{4})[\s/.-]+([0-9]{4})|ANO[\s:;.-]*([0-9]{4})[\s/.-]+([0-9]{4})',
+            "Cor": r'(?:COR|COLOR)[\s:;.-]*([A-Za-zÀ-ú\s]+?)(?:[\s,.;]|$)',
+            "Motor": r'(?:MOTOR|MOT|N[º°\s]?\s*MOTOR)[\s:;.-]*([A-Z0-9]+)',
+            "Combustível": r'(?:COMBUSTÍVEL|COMBUSTIVEL|COMB)[\s:;.-]*([A-Za-zÀ-ú\s/]+?)(?:[\s,.;]|$)',
+            "Modelo": r'(?:MODELO|MOD)[\s:;.-]*([A-Za-zÀ-ú0-9\s\.-]+?)(?:[\s,.;]|$)',
+            "Potência": r'(?:POTÊNCIA|POTENCIA|POT)[\s:;.-]*([0-9]+(?:[,.][0-9]+)?)'
+        }
+    }
+    LAYOUT_COLUNAS = {
+        "Chassi": {"tipo": "str", "ordem": 8}, 
+        "Placa": {"tipo": "str", "ordem": 9}, 
+        "Renavam": {"tipo": "str", "ordem": 10}, 
+        "Ano Fabricação": {"tipo": "int", "ordem": 13}, 
+        "Ano Modelo": {"tipo": "int", "ordem": 12}, 
+        "Motor": {"tipo": "str", "ordem": 15}, 
+        "Cor": {"tipo": "str", "ordem": 14}, 
+        "Combustível": {"tipo": "str", "ordem": 16},
+        "Potência": {"tipo": "float", "ordem": 17},
+        "Modelo": {"tipo": "str", "ordem": 18},
+        "Natureza Operação": {"tipo": "str", "ordem": 19}
+    }
 
 # Pré-compilar as expressões regulares para melhor performance
 REGEX_COMPILADOS = {}
@@ -275,20 +323,8 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
             )
         )
 
-        # Chave da NFe
-        chave_xml = None
-        chave_xpath = xpath_campos.get('CHAVE XML', './/nfe:infNFe/@Id')
-        if '@' in chave_xpath:
-            elem_path, attr = chave_xpath.rsplit('/@', 1)
-            elem = root.find(elem_path, ns)
-            if elem is not None:
-                chave_xml = elem.attrib.get(attr)
-        else:
-            chave_xml = root.findtext(chave_xpath, namespaces=ns)
-
         cabecalho = {
             'Número NF': num_nf,
-            'CHAVE XML': chave_xml,
             'Emitente Nome': root.findtext(
                 xpath_campos.get('Emitente Nome', './/nfe:emit/nfe:xNome'),
                 namespaces=ns,
@@ -328,8 +364,8 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
                 xpath_campos.get('Valor Total', './/nfe:total/nfe:ICMSTot/nfe:vNF'),
                 namespaces=ns,
             ),
-            'Tipo NF': root.findtext(
-                xpath_campos.get('tpNF', './/nfe:ide/nfe:tpNF'),
+            'Natureza Operação': root.findtext(
+                xpath_campos.get('Natureza Operacao', './/nfe:ide/nfe:natOp'),
                 namespaces=ns,
             ),
         }

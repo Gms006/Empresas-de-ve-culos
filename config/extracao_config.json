@@ -10,7 +10,8 @@
     "ICMS": ".//nfe:imposto/nfe:ICMS//nfe:vICMS",
     "CHAVE XML": ".//nfe:infNFe/@Id",
     "Produto": ".//nfe:det/nfe:prod/nfe:xProd",
-    "tpNF": ".//nfe:ide/nfe:tpNF"
+    "tpNF": ".//nfe:ide/nfe:tpNF",
+    "Natureza Operacao": ".//nfe:ide/nfe:natOp"
   },
   "regex_extracao": {
     "Chassi": "(?:CHASSI|CHAS|CH)[\\s:;.-]*([A-HJ-NPR-Z0-9]{17})",
