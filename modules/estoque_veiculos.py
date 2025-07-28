@@ -584,18 +584,15 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
         except Exception as e:
             log.warning(f"Erro ao converter coluna {coluna} para tipo {tipo}: {e}")
     
-    # Ordenar colunas conforme definido no layout_colunas
+    # Manter apenas as colunas definidas no layout
     try:
-        cols_ordenadas = sorted(
+        cols_final = sorted(
             [col for col in df.columns if col in LAYOUT_COLUNAS],
             key=lambda x: LAYOUT_COLUNAS[x].get("ordem", 999)
         )
-        # Adicionar colunas que não estão no layout mas existem no DataFrame
-        outras_colunas = [col for col in df.columns if col not in LAYOUT_COLUNAS]
-        todas_colunas = cols_ordenadas + outras_colunas
-        df = df[todas_colunas]
+        df = df[cols_final]
     except Exception as e:
-        log.warning(f"Erro ao ordenar colunas: {e}")
+        log.warning(f"Erro ao selecionar colunas finais: {e}")
     
     # Estatísticas para validação
     veiculos = df[df['Tipo Produto'] == 'Veículo'].shape[0]
