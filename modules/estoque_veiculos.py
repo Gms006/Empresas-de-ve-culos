@@ -562,7 +562,7 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
     df = df.reindex(columns=list(LAYOUT_COLUNAS.keys()))
 
     return df
-
+  
 # Função para facilitar o processamento direto de um diretório
 def processar_diretorio(diretorio: str, cnpj_empresa: Union[str, List[str]], extensao: str = ".xml") -> pd.DataFrame:
     """Processa todos os arquivos XML em um diretório."""
