@@ -332,6 +332,7 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
             or root.findtext('.//nfe:ide/nfe:dEmi', namespaces=ns)
         )
         data_emissao = formatar_data(data_emissao_text)
+
         emit_cnpj = root.findtext(xpath_campos.get('Emitente CNPJ'), namespaces=ns) or ""
         emit_cpf = root.findtext(xpath_campos.get('Emitente CPF'), namespaces=ns) or ""
         emit_id = emit_cnpj.strip() or emit_cpf.strip() or "Não informado"
