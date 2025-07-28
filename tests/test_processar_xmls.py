@@ -22,6 +22,7 @@ def test_processar_xmls_uses_configurador(monkeypatch):
 
     def fake_config(df):
         called["called"] = True
+        assert isinstance(df, pd.DataFrame)
         # Mimic creation of missing columns
         for col in ["Placa", "Renavam"]:
             if col not in df.columns:
