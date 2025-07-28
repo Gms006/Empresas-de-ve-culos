@@ -74,8 +74,17 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
     else:
         df_estoque['Data Saída'] = pd.NaT
 
-    df_estoque['Valor Entrada'] = pd.to_numeric(df_estoque.get('Valor Total_entrada'), errors='coerce').fillna(0)
-    df_estoque['Valor Venda'] = pd.to_numeric(df_estoque.get('Valor Total_saida'), errors='coerce').fillna(0)
+    def _obter_valor(df, prefixo):
+        col_total = f'Valor Total_{prefixo}'
+        col_item = f'Valor Item_{prefixo}'
+        if col_total in df.columns:
+            return pd.to_numeric(df[col_total], errors='coerce')
+        if col_item in df.columns:
+            return pd.to_numeric(df[col_item], errors='coerce')
+        return pd.Series([0] * len(df), index=df.index)
+
+    df_estoque['Valor Entrada'] = _obter_valor(df_estoque, 'entrada').fillna(0)
+    df_estoque['Valor Venda'] = _obter_valor(df_estoque, 'saida').fillna(0)
     df_estoque['Lucro'] = df_estoque['Valor Venda'] - df_estoque['Valor Entrada']
 
     if 'Data Emissão_entrada' in df_estoque.columns:
