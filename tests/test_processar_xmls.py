@@ -73,5 +73,11 @@ def test_processar_xmls_filters_columns(tmp_path):
     xml_file = tmp_path / "nota.xml"
     xml_file.write_text(xml_content, encoding="utf-8")
     df = ev.processar_xmls([str(xml_file)], "12345678000199")
-    assert list(df.columns) == list(ev.LAYOUT_COLUNAS.keys())
+    expected_cols = list(ev.LAYOUT_COLUNAS.keys()) + [
+        "Empresa CNPJ",
+        "Tipo Nota",
+        "Tipo Produto",
+        "Mês Emissão",
+    ]
+    assert list(df.columns) == expected_cols
 
