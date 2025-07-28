@@ -34,14 +34,13 @@ except Exception as e:
         "xpath_campos": {
             "CFOP": ".//nfe:det/nfe:prod/nfe:CFOP",
             "Data Emissão": ".//nfe:ide/nfe:dhEmi",
-            "Emitente Nome": ".//nfe:emit/nfe:xNome",
             "Emitente CNPJ": ".//nfe:emit/nfe:CNPJ",
-            "Destinatario Nome": ".//nfe:dest/nfe:xNome",
-            "Destinatario CNPJ": ".//nfe:dest/nfe:CNPJ",
-            "Destinatario CPF": ".//nfe:dest/nfe:CPF",
+            "Emitente CPF": ".//nfe:emit/nfe:CPF",
+            "Destinatário CNPJ": ".//nfe:dest/nfe:CNPJ",
+            "Destinatário CPF": ".//nfe:dest/nfe:CPF",
             "Valor Total": ".//nfe:total/nfe:ICMSTot/nfe:vNF",
             "Produto": ".//nfe:det/nfe:prod/nfe:xProd",
-            "Natureza Operacao": ".//nfe:ide/nfe:natOp"
+            "Natureza Operação": ".//nfe:ide/nfe:natOp"
         },
         "regex_extracao": {
             "Chassi": r'(?:CHASSI|CHAS|CH)[\s:;.-]*([A-HJ-NPR-Z0-9]{17})',
@@ -57,17 +56,25 @@ except Exception as e:
         }
     }
     LAYOUT_COLUNAS = {
-        "Chassi": {"tipo": "str", "ordem": 8}, 
-        "Placa": {"tipo": "str", "ordem": 9}, 
-        "Renavam": {"tipo": "str", "ordem": 10}, 
-        "Ano Fabricação": {"tipo": "int", "ordem": 13}, 
-        "Ano Modelo": {"tipo": "int", "ordem": 12}, 
-        "Motor": {"tipo": "str", "ordem": 15}, 
-        "Cor": {"tipo": "str", "ordem": 14}, 
-        "Combustível": {"tipo": "str", "ordem": 16},
-        "Potência": {"tipo": "float", "ordem": 17},
-        "Modelo": {"tipo": "str", "ordem": 18},
-        "Natureza Operação": {"tipo": "str", "ordem": 19}
+        "CFOP": {"tipo": "str", "ordem": 1},
+        "Data Emissão": {"tipo": "date", "ordem": 2},
+        "Emitente CNPJ/CPF": {"tipo": "str", "ordem": 3},
+        "Destinatário CNPJ/CPF": {"tipo": "str", "ordem": 4},
+        "Chassi": {"tipo": "str", "ordem": 5},
+        "Placa": {"tipo": "str", "ordem": 6},
+        "Produto": {"tipo": "str", "ordem": 7},
+        "Valor Total": {"tipo": "float", "ordem": 8},
+        "Renavam": {"tipo": "str", "ordem": 9},
+        "KM": {"tipo": "int", "ordem": 10},
+        "Ano Modelo": {"tipo": "int", "ordem": 11},
+        "Ano Fabricação": {"tipo": "int", "ordem": 12},
+        "Cor": {"tipo": "str", "ordem": 13},
+        "Motor": {"tipo": "str", "ordem": 14},
+        "Combustível": {"tipo": "str", "ordem": 15},
+        "Potência": {"tipo": "float", "ordem": 16},
+        "Modelo": {"tipo": "str", "ordem": 17},
+        "Natureza Operação": {"tipo": "str", "ordem": 99},
+        "CHAVE XML": {"tipo": "str", "ordem": 100}
     }
 
 
@@ -127,36 +134,11 @@ def classificar_tipo_nota(
 ) -> str:
     """Classifica a nota como ``Entrada``, ``Saída`` ou ``Indefinido``.
 
-    A análise do CFOP tem prioridade. Caso o CFOP não esteja presente ou não
-    permita determinar o tipo da nota, a classificação por CNPJ é utilizada
-    como fallback.
+    A regra considera o CFOP **apenas** se o emitente e o destinatário forem a
+    própria empresa. Caso contrário, a determinação depende apenas de qual CNPJ
+    coincide com o da empresa.
     """
 
-    # ------------------------------------------------------------------
-    # Prioridade 1: Analisar CFOP
-    # ------------------------------------------------------------------
-    cfop_str = ""
-    if cfop is not None:
-        try:
-            cfop_str = re.sub(r"\D", "", str(cfop))
-            # Normalizar para 4 dígitos caso venha como float (e.g., 1102.0)
-            if len(cfop_str) > 4:
-                cfop_str = cfop_str[:4]
-            cfop_str = cfop_str.strip()
-        except Exception:
-            cfop_str = ""
-
-    if cfop_str:
-        primeiro_digito = cfop_str[0]
-        if primeiro_digito in {"1", "2"}:
-            return "Entrada"
-        if primeiro_digito in {"5", "6"}:
-            return "Saída"
-        return "Indefinido"
-
-    # ------------------------------------------------------------------
-    # Prioridade 2: Fallback utilizando CNPJ
-    # ------------------------------------------------------------------
     emitente = normalizar_cnpj(emitente_cnpj)
     destinatario = normalizar_cnpj(destinatario_cnpj)
 
@@ -167,10 +149,36 @@ def classificar_tipo_nota(
     else:
         cnpjs_empresa = set()
 
-    if destinatario and destinatario in cnpjs_empresa:
-        return "Entrada"
-    if emitente and emitente in cnpjs_empresa:
+    emit_e_empresa = emitente in cnpjs_empresa if emitente else False
+    dest_e_empresa = destinatario in cnpjs_empresa if destinatario else False
+
+    # Somente se ambos os CNPJs forem da empresa considerar o CFOP
+    if emit_e_empresa and dest_e_empresa:
+        cfop_str = ""
+        if cfop is not None:
+            try:
+                cfop_str = re.sub(r"\D", "", str(cfop))
+                if len(cfop_str) > 4:
+                    cfop_str = cfop_str[:4]
+                cfop_str = cfop_str.strip()
+            except Exception:
+                cfop_str = ""
+
+        if cfop_str:
+            primeiro = cfop_str[0]
+            if primeiro in {"1", "2"}:
+                return "Entrada"
+            if primeiro in {"5", "6"}:
+                return "Saída"
+            return "Indefinido"
+        # Se não houver CFOP, manter como indefinido
+        return "Indefinido"
+
+    # Casos normais sem CFOP envolvido
+    if emit_e_empresa:
         return "Saída"
+    if dest_e_empresa:
+        return "Entrada"
 
     return "Indefinido"
 
@@ -320,57 +328,40 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
         xpath_campos = CONFIG_EXTRACAO.get("xpath_campos", {})
         
         # Garantir campos do cabeçalho sempre preenchidos
-        data_emissao = formatar_data(
-            root.findtext(
-                xpath_campos.get('Data Emissão', './/nfe:ide/nfe:dhEmi'),
-                namespaces=ns,
-            )
+        data_emissao_text = (
+            root.findtext(xpath_campos.get('Data Emissão', './/nfe:ide/nfe:dhEmi'), namespaces=ns)
+            or root.findtext('.//nfe:ide/nfe:dEmi', namespaces=ns)
         )
+        data_emissao = formatar_data(data_emissao_text)
+
+        emit_cnpj = root.findtext(xpath_campos.get('Emitente CNPJ'), namespaces=ns) or ""
+        emit_cpf = root.findtext(xpath_campos.get('Emitente CPF'), namespaces=ns) or ""
+        emit_id = emit_cnpj.strip() or emit_cpf.strip() or "Não informado"
+
+        dest_cnpj = root.findtext(xpath_campos.get('Destinatário CNPJ'), namespaces=ns) or ""
+        dest_cpf = root.findtext(xpath_campos.get('Destinatário CPF'), namespaces=ns) or ""
+        dest_id = dest_cnpj.strip() or dest_cpf.strip() or "Não informado"
 
         cabecalho = {
             'Número NF': num_nf,
             'CHAVE XML': chave_xml,
-            'Emitente Nome': root.findtext(
-                xpath_campos.get('Emitente Nome', './/nfe:emit/nfe:xNome'),
-                namespaces=ns,
-            )
-            or 'Não informado',
-            'Emitente CNPJ': normalizar_cnpj(
+            'Emitente CNPJ/CPF': normalizar_cnpj(emit_id),
+            'Destinatário CNPJ/CPF': normalizar_cnpj(dest_id),
+            'CFOP': (
                 root.findtext(
-                    xpath_campos.get('Emitente CNPJ', './/nfe:emit/nfe:CNPJ'),
+                    xpath_campos.get('CFOP', './/nfe:det/nfe:prod/nfe:CFOP'),
                     namespaces=ns,
                 )
-            )
-            or 'Não informado',
-            'Destinatario Nome': root.findtext(
-                xpath_campos.get('Destinatario Nome', './/nfe:dest/nfe:xNome'),
-                namespaces=ns,
-            )
-            or 'Não informado',
-            'Destinatario CNPJ': normalizar_cnpj(
-                root.findtext(
-                    xpath_campos.get('Destinatario CNPJ', './/nfe:dest/nfe:CNPJ'),
-                    namespaces=ns,
-                )
-            ),
-            'Destinatario CPF': normalizar_cnpj(
-                root.findtext(
-                    xpath_campos.get('Destinatario CPF', './/nfe:dest/nfe:CPF'),
-                    namespaces=ns,
-                )
-            ),
-            'CFOP': root.findtext(
-                xpath_campos.get('CFOP', './/nfe:det/nfe:prod/nfe:CFOP'),
-                namespaces=ns,
+                or root.findtext('.//CFOP', namespaces=ns)
             ),
             'Data Emissão': data_emissao,
-            'Mês Emissão': data_emissao.replace(day=1) if data_emissao else None,
+            'Mês Emissão': data_emissao.strftime('%m/%Y') if data_emissao else None,
             'Valor Total': root.findtext(
                 xpath_campos.get('Valor Total', './/nfe:total/nfe:ICMSTot/nfe:vNF'),
                 namespaces=ns,
             ),
             'Natureza Operação': root.findtext(
-                xpath_campos.get('Natureza Operacao', './/nfe:ide/nfe:natOp'),
+                xpath_campos.get('Natureza Operação', './/nfe:ide/nfe:natOp'),
                 namespaces=ns,
             ),
         }
@@ -459,6 +450,14 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
                     if valor:
                         dados[campo] = valor
                         log.debug(f"Extraído {campo}: {valor}")
+
+            # Caso especial: chassi presente apenas como sufixo em xProd
+            if not dados.get("Chassi") and xProd:
+                match = re.search(r"([A-HJ-NPR-Z0-9]{17})\s*$", xProd)
+                if match:
+                    possivel = match.group(1).upper()
+                    if validar_chassi(possivel):
+                        dados["Chassi"] = possivel
 
             # Validações finais dos dados extraídos
             if dados.get("Chassi"):
@@ -569,8 +568,8 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
 
     df['Tipo Nota'] = df.apply(
         lambda row: classificar_tipo_nota(
-            row['Emitente CNPJ'],
-            row['Destinatario CNPJ'],
+            row['Emitente CNPJ/CPF'],
+            row['Destinatário CNPJ/CPF'],
             cnpj_empresa,
             row.get('CFOP'),
         ),
@@ -579,7 +578,9 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
     df['Tipo Produto'] = df.apply(classificar_produto, axis=1)
 
     if 'Data Emissão' in df.columns:
-        df['Mês Emissão'] = df['Data Emissão'].dt.to_period('M').dt.start_time
+        df['Mês Emissão'] = pd.to_datetime(
+            df['Data Emissão'], errors='coerce'
+        ).dt.strftime('%m/%Y')
    
     # Aplicar configuração de layout e tipagem
     df = configurar_planilha(df)
@@ -594,15 +595,32 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
     log.info(f"Estatísticas finais: {veiculos} veículos, {consumo} itens de consumo")
     log.info(f"Dados de identificação: {com_chassi} com chassi, {com_placa} com placa, {com_renavam} com renavam")
 
-    # Manter apenas as colunas configuradas e extras de classificação
-    colunas_base = list(LAYOUT_COLUNAS.keys())
-    colunas_extra = [
-        "Empresa CNPJ",
+    nova_ordem = [
         "Tipo Nota",
+        "CFOP",
+        "Data Emissão",
+        "Emitente CNPJ/CPF",
+        "Destinatário CNPJ/CPF",
+        "Chassi",
+        "Placa",
+        "Produto",
+        "Valor Total",
+        "Renavam",
+        "KM",
+        "Ano Modelo",
+        "Ano Fabricação",
+        "Cor",
+        "Natureza Operação",
+        "CHAVE XML",
+        "Empresa CNPJ",
         "Tipo Produto",
         "Mês Emissão",
     ]
-    df = df.reindex(columns=colunas_base + colunas_extra)
+    # Garantir todas as colunas
+    for col in nova_ordem:
+        if col not in df.columns:
+            df[col] = None
+    df = df[nova_ordem]
 
     return df
   

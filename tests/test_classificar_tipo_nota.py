@@ -16,17 +16,17 @@ CNPJ = "41492247000150"
     ("6102","Saída"),
     ("9999","Indefinido"),
 ])
-def test_cfop_priority(cfop, expected):
-    assert classificar_tipo_nota(CNPJ, "00000000000000", CNPJ, cfop) == expected
+def test_cfop_aplicado_quando_ambos_sao_empresa(cfop, expected):
+    assert classificar_tipo_nota(CNPJ, CNPJ, CNPJ, cfop) == expected
 
 
-def test_cnpj_fallback_entrada():
-    assert classificar_tipo_nota("123", CNPJ, CNPJ, None) == "Entrada"
+def test_cnpj_regra_entrada():
+    assert classificar_tipo_nota("123", CNPJ, CNPJ, "5102") == "Entrada"
 
 
-def test_cnpj_fallback_saida():
-    assert classificar_tipo_nota(CNPJ, "123", CNPJ, None) == "Saída"
+def test_cnpj_regra_saida():
+    assert classificar_tipo_nota(CNPJ, "123", CNPJ, "1102") == "Saída"
 
 
-def test_cnpj_fallback_indefinido():
-    assert classificar_tipo_nota("123", "456", CNPJ, None) == "Indefinido"
+def test_cnpj_regra_indefinido():
+    assert classificar_tipo_nota("123", "456", CNPJ, "1102") == "Indefinido"
