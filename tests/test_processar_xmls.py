@@ -13,8 +13,8 @@ def test_processar_xmls_uses_configurador(monkeypatch):
 
     def fake_extrair(_):
         return [{
-            "Emitente CNPJ": "111",
-            "Destinatario CNPJ": "222",
+            "Emitente CNPJ/CPF": "111",
+            "Destinatário CNPJ/CPF": "222",
             "CFOP": "1102",
             "Chassi": "ABCDEFGH123456789",
             "Data Emissão": pd.Timestamp("2023-01-01")
@@ -73,9 +73,24 @@ def test_processar_xmls_filters_columns(tmp_path):
     xml_file = tmp_path / "nota.xml"
     xml_file.write_text(xml_content, encoding="utf-8")
     df = ev.processar_xmls([str(xml_file)], "12345678000199")
-    expected_cols = list(ev.LAYOUT_COLUNAS.keys()) + [
-        "Empresa CNPJ",
+    expected_cols = [
         "Tipo Nota",
+        "CFOP",
+        "Data Emissão",
+        "Emitente CNPJ/CPF",
+        "Destinatário CNPJ/CPF",
+        "Chassi",
+        "Placa",
+        "Produto",
+        "Valor Total",
+        "Renavam",
+        "KM",
+        "Ano Modelo",
+        "Ano Fabricação",
+        "Cor",
+        "Natureza Operação",
+        "CHAVE XML",
+        "Empresa CNPJ",
         "Tipo Produto",
         "Mês Emissão",
     ]
