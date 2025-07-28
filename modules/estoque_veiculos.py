@@ -36,12 +36,12 @@ except Exception as e:
             "Data Emissão": ".//nfe:ide/nfe:dhEmi",
             "Emitente Nome": ".//nfe:emit/nfe:xNome",
             "Emitente CNPJ": ".//nfe:emit/nfe:CNPJ",
-            "Destinatario Nome": ".//nfe:dest/nfe:xNome",
-            "Destinatario CNPJ": ".//nfe:dest/nfe:CNPJ",
-            "Destinatario CPF": ".//nfe:dest/nfe:CPF",
+            "Destinatário Nome": ".//nfe:dest/nfe:xNome",
+            "Destinatário CNPJ": ".//nfe:dest/nfe:CNPJ",
+            "Destinatário CPF": ".//nfe:dest/nfe:CPF",
             "Valor Total": ".//nfe:total/nfe:ICMSTot/nfe:vNF",
             "Produto": ".//nfe:det/nfe:prod/nfe:xProd",
-            "Natureza Operacao": ".//nfe:ide/nfe:natOp"
+            "Natureza Operação": ".//nfe:ide/nfe:natOp"
         },
         "regex_extracao": {
             "Chassi": r'(?:CHASSI|CHAS|CH)[\s:;.-]*([A-HJ-NPR-Z0-9]{17})',
@@ -57,17 +57,23 @@ except Exception as e:
         }
     }
     LAYOUT_COLUNAS = {
-        "Chassi": {"tipo": "str", "ordem": 8}, 
-        "Placa": {"tipo": "str", "ordem": 9}, 
-        "Renavam": {"tipo": "str", "ordem": 10}, 
-        "Ano Fabricação": {"tipo": "int", "ordem": 13}, 
-        "Ano Modelo": {"tipo": "int", "ordem": 12}, 
-        "Motor": {"tipo": "str", "ordem": 15}, 
-        "Cor": {"tipo": "str", "ordem": 14}, 
-        "Combustível": {"tipo": "str", "ordem": 16},
-        "Potência": {"tipo": "float", "ordem": 17},
-        "Modelo": {"tipo": "str", "ordem": 18},
-        "Natureza Operação": {"tipo": "str", "ordem": 19}
+        "Tipo Nota": {"tipo": "str", "ordem": 1},
+        "CFOP": {"tipo": "str", "ordem": 2},
+        "Data Emissão": {"tipo": "date", "ordem": 3},
+        "Valor Total": {"tipo": "float", "ordem": 4},
+        "Emitente Nome": {"tipo": "str", "ordem": 5},
+        "Destinatário Nome": {"tipo": "str", "ordem": 6},
+        "Destinatário CNPJ": {"tipo": "str", "ordem": 7},
+        "Destinatário CPF": {"tipo": "str", "ordem": 8},
+        "Chassi": {"tipo": "str", "ordem": 9},
+        "Placa": {"tipo": "str", "ordem": 10},
+        "Renavam": {"tipo": "str", "ordem": 11},
+        "KM": {"tipo": "int", "ordem": 12},
+        "Ano Modelo": {"tipo": "int", "ordem": 13},
+        "Ano Fabricação": {"tipo": "int", "ordem": 14},
+        "Cor": {"tipo": "str", "ordem": 15},
+        "Natureza Operação": {"tipo": "str", "ordem": 16},
+        "CHAVE XML": {"tipo": "str", "ordem": 17}
     }
 
 
@@ -342,20 +348,20 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
                 )
             )
             or 'Não informado',
-            'Destinatario Nome': root.findtext(
-                xpath_campos.get('Destinatario Nome', './/nfe:dest/nfe:xNome'),
+            'Destinatário Nome': root.findtext(
+                xpath_campos.get('Destinatário Nome', './/nfe:dest/nfe:xNome'),
                 namespaces=ns,
             )
             or 'Não informado',
-            'Destinatario CNPJ': normalizar_cnpj(
+            'Destinatário CNPJ': normalizar_cnpj(
                 root.findtext(
-                    xpath_campos.get('Destinatario CNPJ', './/nfe:dest/nfe:CNPJ'),
+                    xpath_campos.get('Destinatário CNPJ', './/nfe:dest/nfe:CNPJ'),
                     namespaces=ns,
                 )
             ),
-            'Destinatario CPF': normalizar_cnpj(
+            'Destinatário CPF': normalizar_cnpj(
                 root.findtext(
-                    xpath_campos.get('Destinatario CPF', './/nfe:dest/nfe:CPF'),
+                    xpath_campos.get('Destinatário CPF', './/nfe:dest/nfe:CPF'),
                     namespaces=ns,
                 )
             ),
@@ -364,13 +370,13 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
                 namespaces=ns,
             ),
             'Data Emissão': data_emissao,
-            'Mês Emissão': data_emissao.replace(day=1) if data_emissao else None,
+            'Mês Emissão': data_emissao.strftime('%m/%Y') if data_emissao else None,
             'Valor Total': root.findtext(
                 xpath_campos.get('Valor Total', './/nfe:total/nfe:ICMSTot/nfe:vNF'),
                 namespaces=ns,
             ),
             'Natureza Operação': root.findtext(
-                xpath_campos.get('Natureza Operacao', './/nfe:ide/nfe:natOp'),
+                xpath_campos.get('Natureza Operação', './/nfe:ide/nfe:natOp'),
                 namespaces=ns,
             ),
         }
@@ -570,7 +576,7 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
     df['Tipo Nota'] = df.apply(
         lambda row: classificar_tipo_nota(
             row['Emitente CNPJ'],
-            row['Destinatario CNPJ'],
+            row['Destinatário CNPJ'],
             cnpj_empresa,
             row.get('CFOP'),
         ),
@@ -578,11 +584,21 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
     )
     df['Tipo Produto'] = df.apply(classificar_produto, axis=1)
 
-    if 'Data Emissão' in df.columns:
-        df['Mês Emissão'] = df['Data Emissão'].dt.to_period('M').dt.start_time
-   
     # Aplicar configuração de layout e tipagem
     df = configurar_planilha(df)
+
+    # Reordenar colunas conforme especificado
+    ordenadas = sorted(LAYOUT_COLUNAS.items(), key=lambda x: x[1]['ordem'])
+    base_cols = [c for c, _ in ordenadas]
+    extras = ["Empresa CNPJ", "Tipo Produto", "Mês Emissão"]
+    nova_ordem = [
+        "Tipo Nota",
+        *[c for c in base_cols if c not in {"Tipo Nota", "Natureza Operação", "CHAVE XML"}],
+        *extras,
+        "Natureza Operação",
+        "CHAVE XML",
+    ]
+    df = df.reindex(columns=nova_ordem)
 
     # Estatísticas para validação
     veiculos = df[df['Tipo Produto'] == 'Veículo'].shape[0]
@@ -593,16 +609,6 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
     
     log.info(f"Estatísticas finais: {veiculos} veículos, {consumo} itens de consumo")
     log.info(f"Dados de identificação: {com_chassi} com chassi, {com_placa} com placa, {com_renavam} com renavam")
-
-    # Manter apenas as colunas configuradas e extras de classificação
-    colunas_base = list(LAYOUT_COLUNAS.keys())
-    colunas_extra = [
-        "Empresa CNPJ",
-        "Tipo Nota",
-        "Tipo Produto",
-        "Mês Emissão",
-    ]
-    df = df.reindex(columns=colunas_base + colunas_extra)
 
     return df
   
