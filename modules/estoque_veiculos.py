@@ -673,9 +673,6 @@ def exportar_para_excel(df: pd.DataFrame, caminho_saida: str) -> bool:
             'valign': 'top'
         })
         
-        formato_consumo = workbook.add_format({
-            'valign': 'top'
-        })
         
         formato_numero = workbook.add_format({
             'num_format': '#,##0.00',
