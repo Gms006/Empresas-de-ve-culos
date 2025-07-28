@@ -550,17 +550,10 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
     com_chassi = df[df['Chassi'].notna()].shape[0]
     com_placa = df[df['Placa'].notna()].shape[0]
     com_renavam = df[df['Renavam'].notna()].shape[0]
-
-    log.info(
-        f"Estatísticas finais: {veiculos} veículos, {consumo} itens de consumo"
-    )
-    log.info(
-        f"Dados de identificação: {com_chassi} com chassi, {com_placa} com placa, {com_renavam} com renavam"
-    )
-
-    # Manter apenas as colunas configuradas
-    df = df.reindex(columns=list(LAYOUT_COLUNAS.keys()))
-
+    
+    log.info(f"Estatísticas finais: {veiculos} veículos, {consumo} itens de consumo")
+    log.info(f"Dados de identificação: {com_chassi} com chassi, {com_placa} com placa, {com_renavam} com renavam")
+    
     return df
 
 # Função para facilitar o processamento direto de um diretório
