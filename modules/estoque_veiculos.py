@@ -562,7 +562,7 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
     df = df.reindex(columns=list(LAYOUT_COLUNAS.keys()))
 
     return df
-
+  
 # Função para facilitar o processamento direto de um diretório
 def processar_diretorio(diretorio: str, cnpj_empresa: Union[str, List[str]], extensao: str = ".xml") -> pd.DataFrame:
     """Processa todos os arquivos XML em um diretório."""
@@ -650,7 +650,7 @@ def exportar_para_excel(df: pd.DataFrame, caminho_saida: str) -> bool:
             )
             worksheet.set_column(i, i, max_len + 2)
         
-           # Aplicar formatação condicional para veículos se a coluna existir
+        # Aplicar formatação condicional para veículos se a coluna existir
         if 'Tipo Produto' in df.columns:
             from xlsxwriter.utility import xl_col_to_name
             col_idx = df.columns.get_loc('Tipo Produto')
