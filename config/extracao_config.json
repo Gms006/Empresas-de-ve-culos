@@ -9,7 +9,7 @@
     "Destinatario CPF": ".//nfe:dest/nfe:CPF",
     "Valor Total": ".//nfe:total/nfe:ICMSTot/nfe:vNF",
     "Produto": ".//nfe:det/nfe:prod/nfe:xProd",
-    "tpNF": ".//nfe:ide/nfe:tpNF"
+    "Natureza Operacao": ".//nfe:ide/nfe:natOp"
   },
   "regex_extracao": {
   "Chassi": "(?:CHASSI|CHAS|CH)[\\s:;.-]*([A-HJ-NPR-Z0-9]{17})",
