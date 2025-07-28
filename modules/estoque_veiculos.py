@@ -6,6 +6,7 @@ import logging
 import os
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
+from modules.configurador_planilha import configurar_planilha
 
 
 # Configuração de Logs
@@ -19,10 +20,9 @@ log = logging.getLogger(__name__)
 # Caminhos de configuração
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config')
 
-# Carregamento de configurações com tratamento de erros
-try:
-    with open(os.path.join(CONFIG_PATH, 'extracao_config.json'), encoding='utf-8') as f:
-        CONFIG_EXTRACAO = json.load(f)
+# Carregamento de configurações
+with open(os.path.join(CONFIG_PATH, 'extracao_config.json'), encoding='utf-8') as f:
+    CONFIG_EXTRACAO = json.load(f)
 
     with open(os.path.join(CONFIG_PATH, 'layout_colunas.json'), encoding='utf-8') as f:
         LAYOUT_COLUNAS = json.load(f)
@@ -74,7 +74,6 @@ except Exception as e:
         "Modelo": {"tipo": "str", "ordem": 18},
         "Natureza Operação": {"tipo": "str", "ordem": 19}
     }
-
 # Pré-compilar as expressões regulares para melhor performance
 REGEX_COMPILADOS = {}
 try:
@@ -315,6 +314,7 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
         xpath_campos = CONFIG_EXTRACAO.get("xpath_campos", {})
         
         # Garantir campos do cabeçalho sempre preenchidos
+        
         data_emissao = formatar_data(
             root.findtext(
                 xpath_campos.get('Data Emissão', './/nfe:ide/nfe:dhEmi'),
@@ -368,7 +368,6 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
                 namespaces=ns,
             ),
         }
-
         log.debug(f"Cabeçalho extraído: {cabecalho}")
 
         registros = []
@@ -399,8 +398,18 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
             produto_completo = f"{xProd} {infAdProd} {infos_gerais}".strip()
             
             dados['Produto'] = limpar_texto(xProd)
-            
+
             log.debug(f"Processando item {i}: {dados['Produto'][:50]}...")
+
+            # Valor do ICMS do item
+            try:
+                icms_text = item.findtext(
+                    xpath_campos.get('ICMS', './/nfe:imposto/nfe:ICMS//nfe:vICMS'),
+                    namespaces=ns,
+                )
+                dados['ICMS'] = float(icms_text) if icms_text is not None else None
+            except Exception as e:
+                log.warning(f"Erro ao processar ICMS do item: {e}")
 
             # Procurar diretamente campos de veículo na estrutura XML
             try:
@@ -565,51 +574,42 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
 
     if 'Data Emissão' in df.columns:
         df['Mês Emissão'] = df['Data Emissão'].dt.to_period('M').dt.start_time
+   
+    # Aplicar configuração de layout e tipagem
+    df = configurar_planilha(df)
     
-    ## Tratamento de tipos de dados conforme especificado no layout_colunas
-    log.info("Aplicando conversões de tipo aos dados extraídos")
-    for coluna, info in LAYOUT_COLUNAS.items():
-        if coluna not in df.columns:
-            continue
-            
-        tipo = info.get("tipo")
-        try:
-            if tipo == "int":
-                df[coluna] = pd.to_numeric(df[coluna], errors='coerce').fillna(0).astype('Int64')
-            elif tipo == "float":
-                df[coluna] = pd.to_numeric(df[coluna], errors='coerce')
-            elif tipo == "date":
-                # Já formatado em formatar_data
-                pass
-            # Tipo string é o padrão, não precisa converter
-        except Exception as e:
-            log.warning(f"Erro ao converter coluna {coluna} para tipo {tipo}: {e}")
-    
-    # Ordenar colunas conforme definido no layout_colunas
-    try:
-        cols_ordenadas = sorted(
-            [col for col in df.columns if col in LAYOUT_COLUNAS],
-            key=lambda x: LAYOUT_COLUNAS[x].get("ordem", 999)
-        )
-        # Adicionar colunas que não estão no layout mas existem no DataFrame
-        outras_colunas = [col for col in df.columns if col not in LAYOUT_COLUNAS]
-        todas_colunas = cols_ordenadas + outras_colunas
-        df = df[todas_colunas]
-    except Exception as e:
-        log.warning(f"Erro ao ordenar colunas: {e}")
-    
+
     # Estatísticas para validação
     veiculos = df[df['Tipo Produto'] == 'Veículo'].shape[0]
     consumo = df[df['Tipo Produto'] == 'Consumo'].shape[0]
     com_chassi = df[df['Chassi'].notna()].shape[0]
     com_placa = df[df['Placa'].notna()].shape[0]
     com_renavam = df[df['Renavam'].notna()].shape[0]
-    
-    log.info(f"Estatísticas finais: {veiculos} veículos, {consumo} itens de consumo")
-    log.info(f"Dados de identificação: {com_chassi} com chassi, {com_placa} com placa, {com_renavam} com renavam")
-    
+
+    log.info(
+        f"Estatísticas finais: {veiculos} veículos, {consumo} itens de consumo"
+    )
+    log.info(
+        f"Dados de identificação: {com_chassi} com chassi, {com_placa} com placa, {com_renavam} com renavam"
+    )
+
+    # Manter apenas as colunas configuradas
+    df = df.reindex(columns=list(LAYOUT_COLUNAS.keys()))
+
     return df
 
+    log.info(
+        f"Estatísticas finais: {veiculos} veículos, {consumo} itens de consumo"
+    )
+    log.info(
+        f"Dados de identificação: {com_chassi} com chassi, {com_placa} com placa, {com_renavam} com renavam"
+    )
+
+    # Manter apenas as colunas configuradas
+    df = df.reindex(columns=list(LAYOUT_COLUNAS.keys()))
+
+    return df
+  
 # Função para facilitar o processamento direto de um diretório
 def processar_diretorio(diretorio: str, cnpj_empresa: Union[str, List[str]], extensao: str = ".xml") -> pd.DataFrame:
     """Processa todos os arquivos XML em um diretório."""
@@ -697,12 +697,22 @@ def exportar_para_excel(df: pd.DataFrame, caminho_saida: str) -> bool:
             )
             worksheet.set_column(i, i, max_len + 2)
         
-        # Aplicar formatação condicional para veículos
-        worksheet.conditional_format(1, 0, len(df) + 1, len(df.columns) - 1, {
-            'type': 'formula',
-            'criteria': '=$J2="Veículo"',  # Ajuste para a coluna "Tipo Produto"
-            'format': formato_veiculo
-        })
+        # Aplicar formatação condicional para veículos se a coluna existir
+        if 'Tipo Produto' in df.columns:
+            from xlsxwriter.utility import xl_col_to_name
+            col_idx = df.columns.get_loc('Tipo Produto')
+            col_letter = xl_col_to_name(col_idx)
+            worksheet.conditional_format(
+                1,
+                0,
+                len(df) + 1,
+                len(df.columns) - 1,
+                {
+                    'type': 'formula',
+                    'criteria': f'=${col_letter}2="Veículo"',
+                    'format': formato_veiculo,
+                },
+            )
         
         # Configurar filtros
         worksheet.autofilter(0, 0, len(df), len(df.columns) - 1)
