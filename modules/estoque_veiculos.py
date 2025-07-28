@@ -46,7 +46,7 @@ except Exception as e:
             "Destinatario CPF": ".//nfe:dest/nfe:CPF",
             "Valor Total": ".//nfe:total/nfe:ICMSTot/nfe:vNF",
             "Produto": ".//nfe:det/nfe:prod/nfe:xProd",
-            "tpNF": ".//nfe:ide/nfe:tpNF"
+            "Natureza Operacao": ".//nfe:ide/nfe:natOp"
         },
         "regex_extracao": {
             "Chassi": r'(?:CHASSI|CHAS|CH)[\s:;.-]*([A-HJ-NPR-Z0-9]{17})',
@@ -74,7 +74,6 @@ except Exception as e:
         "Modelo": {"tipo": "str", "ordem": 18},
         "Natureza Operação": {"tipo": "str", "ordem": 19}
     }
-
 # Pré-compilar as expressões regulares para melhor performance
 REGEX_COMPILADOS = {}
 try:
@@ -315,7 +314,7 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
         xpath_campos = CONFIG_EXTRACAO.get("xpath_campos", {})
         
         # Garantir campos do cabeçalho sempre preenchidos
-
+        
         data_emissao = formatar_data(
             root.findtext(
                 xpath_campos.get('Data Emissão', './/nfe:ide/nfe:dhEmi'),
@@ -369,7 +368,6 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
                 namespaces=ns,
             ),
         }
-
         log.debug(f"Cabeçalho extraído: {cabecalho}")
 
         registros = []
