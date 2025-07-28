@@ -1,17 +1,13 @@
-import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'modules'))
 
 import pandas as pd
 import xml.etree.ElementTree as ET
 import json
 import re
 import logging
-import os
 from modules.configurador_planilha import configurar_planilha
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
-from configurador_planilha import configurar_planilha
 
 # Configuração de Logs
 logging.basicConfig(
@@ -317,6 +313,15 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
             log.warning(f"Erro ao obter número da NF: {e}")
             num_nf = "Desconhecido"
 
+        # Chave de acesso do XML
+        chave_xml = ""
+        try:
+            inf_nfe = root.find('.//nfe:infNFe', namespaces=ns)
+            if inf_nfe is not None:
+                chave_xml = inf_nfe.attrib.get('Id', '')
+        except Exception:
+            chave_xml = ""
+
         # Extrair dados dos campos XPath do cabeçalho da nota
         xpath_campos = CONFIG_EXTRACAO.get("xpath_campos", {})
         
@@ -330,53 +335,7 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
 
         cabecalho = {
             'Número NF': num_nf,
-            'Emitente Nome': root.findtext(
-                xpath_campos.get('Emitente Nome', './/nfe:emit/nfe:xNome'),
-                namespaces=ns,
-            )
-            or 'Não informado',
-            'Emitente CNPJ': normalizar_cnpj(
-                root.findtext(
-                    xpath_campos.get('Emitente CNPJ', './/nfe:emit/nfe:CNPJ'),
-                    namespaces=ns,
-                )
-            )
-            or 'Não informado',
-            'Destinatario Nome': root.findtext(
-                xpath_campos.get('Destinatario Nome', './/nfe:dest/nfe:xNome'),
-                namespaces=ns,
-            )
-            or 'Não informado',
-            'Destinatario CNPJ': normalizar_cnpj(
-                root.findtext(
-                    xpath_campos.get('Destinatario CNPJ', './/nfe:dest/nfe:CNPJ'),
-                    namespaces=ns,
-                )
-            ),
-            'Destinatario CPF': normalizar_cnpj(
-                root.findtext(
-                    xpath_campos.get('Destinatario CPF', './/nfe:dest/nfe:CPF'),
-                    namespaces=ns,
-                )
-            ),
-            'CFOP': root.findtext(
-                xpath_campos.get('CFOP', './/nfe:det/nfe:prod/nfe:CFOP'),
-                namespaces=ns,
-            ),
-            'Data Emissão': data_emissao,
-            'Mês Emissão': data_emissao.replace(day=1) if data_emissao else None,
-            'Valor Total': root.findtext(
-                xpath_campos.get('Valor Total', './/nfe:total/nfe:ICMSTot/nfe:vNF'),
-                namespaces=ns,
-            ),
-            'Natureza Operação': root.findtext(
-                xpath_campos.get('Natureza Operacao', './/nfe:ide/nfe:natOp'),
-                namespaces=ns,
-            ),
-        }
-
-        cabecalho = {
-            'Número NF': num_nf,
+            'CHAVE XML': chave_xml,
             'Emitente Nome': root.findtext(
                 xpath_campos.get('Emitente Nome', './/nfe:emit/nfe:xNome'),
                 namespaces=ns,
@@ -630,7 +589,6 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
    
     # Aplicar configuração de layout e tipagem
     df = configurar_planilha(df)
-    
 
     # Estatísticas para validação
     veiculos = df[df['Tipo Produto'] == 'Veículo'].shape[0]
@@ -641,17 +599,6 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
     
     log.info(f"Estatísticas finais: {veiculos} veículos, {consumo} itens de consumo")
     log.info(f"Dados de identificação: {com_chassi} com chassi, {com_placa} com placa, {com_renavam} com renavam")
-
-    # Ajustar DataFrame conforme layout configurado
-    df = configurar_planilha(df)
-    return df
-
-    log.info(
-        f"Estatísticas finais: {veiculos} veículos, {consumo} itens de consumo"
-    )
-    log.info(
-        f"Dados de identificação: {com_chassi} com chassi, {com_placa} com placa, {com_renavam} com renavam"
-    )
 
     # Manter apenas as colunas configuradas
     df = df.reindex(columns=list(LAYOUT_COLUNAS.keys()))
