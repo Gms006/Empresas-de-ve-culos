@@ -4,6 +4,7 @@ import json
 import re
 import logging
 import os
+from modules.configurador_planilha import configurar_planilha
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
 
@@ -46,7 +47,7 @@ except Exception as e:
             "Destinatario CPF": ".//nfe:dest/nfe:CPF",
             "Valor Total": ".//nfe:total/nfe:ICMSTot/nfe:vNF",
             "Produto": ".//nfe:det/nfe:prod/nfe:xProd",
-            "tpNF": ".//nfe:ide/nfe:tpNF"
+            "Natureza Operacao": ".//nfe:ide/nfe:natOp"
         },
         "regex_extracao": {
             "Chassi": r'(?:CHASSI|CHAS|CH)[\s:;.-]*([A-HJ-NPR-Z0-9]{17})',
@@ -70,8 +71,9 @@ except Exception as e:
         "Motor": {"tipo": "str", "ordem": 15}, 
         "Cor": {"tipo": "str", "ordem": 14}, 
         "Combustível": {"tipo": "str", "ordem": 16},
-        "Potência": {"tipo": "float", "ordem": 17}, 
-        "Modelo": {"tipo": "str", "ordem": 18}
+        "Potência": {"tipo": "float", "ordem": 17},
+        "Modelo": {"tipo": "str", "ordem": 18},
+        "Natureza Operação": {"tipo": "str", "ordem": 19}
     }
 
 # Pré-compilar as expressões regulares para melhor performance
@@ -362,8 +364,8 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
                 xpath_campos.get('Valor Total', './/nfe:total/nfe:ICMSTot/nfe:vNF'),
                 namespaces=ns,
             ),
-            'Tipo NF': root.findtext(
-                xpath_campos.get('tpNF', './/nfe:ide/nfe:tpNF'),
+            'Natureza Operação': root.findtext(
+                xpath_campos.get('Natureza Operacao', './/nfe:ide/nfe:natOp'),
                 namespaces=ns,
             ),
         }
@@ -606,7 +608,9 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
     
     log.info(f"Estatísticas finais: {veiculos} veículos, {consumo} itens de consumo")
     log.info(f"Dados de identificação: {com_chassi} com chassi, {com_placa} com placa, {com_renavam} com renavam")
-    
+
+    # Ajustar DataFrame conforme layout configurado
+    df = configurar_planilha(df)
     return df
 
 # Função para facilitar o processamento direto de um diretório
@@ -673,9 +677,6 @@ def exportar_para_excel(df: pd.DataFrame, caminho_saida: str) -> bool:
             'valign': 'top'
         })
         
-        formato_consumo = workbook.add_format({
-            'valign': 'top'
-        })
         
         formato_numero = workbook.add_format({
             'num_format': '#,##0.00',
