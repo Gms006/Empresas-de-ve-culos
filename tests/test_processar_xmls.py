@@ -14,7 +14,7 @@ def test_processar_xmls_uses_configurador(monkeypatch):
     def fake_extrair(_):
         return [{
             "Emitente CNPJ": "111",
-            "Destinatário CNPJ": "222",
+            "Destinatario CNPJ": "222",
             "CFOP": "1102",
             "Chassi": "ABCDEFGH123456789",
             "Data Emissão": pd.Timestamp("2023-01-01")
