@@ -7,6 +7,8 @@ import xml.etree.ElementTree as ET
 import json
 import re
 import logging
+import os
+from modules.configurador_planilha import configurar_planilha
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
 from configurador_planilha import configurar_planilha
@@ -47,11 +49,9 @@ except Exception as e:
             "Destinatario Nome": ".//nfe:dest/nfe:xNome",
             "Destinatario CNPJ": ".//nfe:dest/nfe:CNPJ",
             "Destinatario CPF": ".//nfe:dest/nfe:CPF",
-
             "Valor Total": ".//nfe:total/nfe:ICMSTot/nfe:vNF",
             "Produto": ".//nfe:det/nfe:prod/nfe:xProd",
             "Natureza Operacao": ".//nfe:ide/nfe:natOp"
-
         },
         "regex_extracao": {
             "Chassi": r'(?:CHASSI|CHAS|CH)[\s:;.-]*([A-HJ-NPR-Z0-9]{17})',
@@ -321,6 +321,60 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
         xpath_campos = CONFIG_EXTRACAO.get("xpath_campos", {})
         
         # Garantir campos do cabeçalho sempre preenchidos
+        data_emissao = formatar_data(
+            root.findtext(
+                xpath_campos.get('Data Emissão', './/nfe:ide/nfe:dhEmi'),
+                namespaces=ns,
+            )
+        )
+
+        cabecalho = {
+            'Número NF': num_nf,
+            'Emitente Nome': root.findtext(
+                xpath_campos.get('Emitente Nome', './/nfe:emit/nfe:xNome'),
+                namespaces=ns,
+            )
+            or 'Não informado',
+            'Emitente CNPJ': normalizar_cnpj(
+                root.findtext(
+                    xpath_campos.get('Emitente CNPJ', './/nfe:emit/nfe:CNPJ'),
+                    namespaces=ns,
+                )
+            )
+            or 'Não informado',
+            'Destinatario Nome': root.findtext(
+                xpath_campos.get('Destinatario Nome', './/nfe:dest/nfe:xNome'),
+                namespaces=ns,
+            )
+            or 'Não informado',
+            'Destinatario CNPJ': normalizar_cnpj(
+                root.findtext(
+                    xpath_campos.get('Destinatario CNPJ', './/nfe:dest/nfe:CNPJ'),
+                    namespaces=ns,
+                )
+            ),
+            'Destinatario CPF': normalizar_cnpj(
+                root.findtext(
+                    xpath_campos.get('Destinatario CPF', './/nfe:dest/nfe:CPF'),
+                    namespaces=ns,
+                )
+            ),
+            'CFOP': root.findtext(
+                xpath_campos.get('CFOP', './/nfe:det/nfe:prod/nfe:CFOP'),
+                namespaces=ns,
+            ),
+            'Data Emissão': data_emissao,
+            'Mês Emissão': data_emissao.replace(day=1) if data_emissao else None,
+            'Valor Total': root.findtext(
+                xpath_campos.get('Valor Total', './/nfe:total/nfe:ICMSTot/nfe:vNF'),
+                namespaces=ns,
+            ),
+            'Natureza Operação': root.findtext(
+                xpath_campos.get('Natureza Operacao', './/nfe:ide/nfe:natOp'),
+                namespaces=ns,
+            ),
+        }
+
 
         data_emissao = formatar_data(
             root.findtext(
@@ -639,17 +693,12 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
     com_chassi = df[df['Chassi'].notna()].shape[0]
     com_placa = df[df['Placa'].notna()].shape[0]
     com_renavam = df[df['Renavam'].notna()].shape[0]
+    
+    log.info(f"Estatísticas finais: {veiculos} veículos, {consumo} itens de consumo")
+    log.info(f"Dados de identificação: {com_chassi} com chassi, {com_placa} com placa, {com_renavam} com renavam")
 
-    log.info(
-        f"Estatísticas finais: {veiculos} veículos, {consumo} itens de consumo"
-    )
-    log.info(
-        f"Dados de identificação: {com_chassi} com chassi, {com_placa} com placa, {com_renavam} com renavam"
-    )
-
-    # Manter apenas as colunas configuradas
-    df = df.reindex(columns=list(LAYOUT_COLUNAS.keys()))
-
+    # Ajustar DataFrame conforme layout configurado
+    df = configurar_planilha(df)
     return df
 
     log.info(
