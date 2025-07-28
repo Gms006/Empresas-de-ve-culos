@@ -77,7 +77,6 @@ except Exception as e:
         "CHAVE XML": {"tipo": "str", "ordem": 100}
     }
 
-
 # Pré-compilar as expressões regulares para melhor performance
 REGEX_COMPILADOS = {}
 try:
@@ -134,36 +133,11 @@ def classificar_tipo_nota(
 ) -> str:
     """Classifica a nota como ``Entrada``, ``Saída`` ou ``Indefinido``.
 
-    A análise do CFOP tem prioridade. Caso o CFOP não esteja presente ou não
-    permita determinar o tipo da nota, a classificação por CNPJ é utilizada
-    como fallback.
+    A regra considera o CFOP **apenas** se o emitente e o destinatário forem a
+    própria empresa. Caso contrário, a determinação depende apenas de qual CNPJ
+    coincide com o da empresa.
     """
 
-    # ------------------------------------------------------------------
-    # Prioridade 1: Analisar CFOP
-    # ------------------------------------------------------------------
-    cfop_str = ""
-    if cfop is not None:
-        try:
-            cfop_str = re.sub(r"\D", "", str(cfop))
-            # Normalizar para 4 dígitos caso venha como float (e.g., 1102.0)
-            if len(cfop_str) > 4:
-                cfop_str = cfop_str[:4]
-            cfop_str = cfop_str.strip()
-        except Exception:
-            cfop_str = ""
-
-    if cfop_str:
-        primeiro_digito = cfop_str[0]
-        if primeiro_digito in {"1", "2"}:
-            return "Entrada"
-        if primeiro_digito in {"5", "6"}:
-            return "Saída"
-        return "Indefinido"
-
-    # ------------------------------------------------------------------
-    # Prioridade 2: Fallback utilizando CNPJ
-    # ------------------------------------------------------------------
     emitente = normalizar_cnpj(emitente_cnpj)
     destinatario = normalizar_cnpj(destinatario_cnpj)
 
@@ -174,10 +148,36 @@ def classificar_tipo_nota(
     else:
         cnpjs_empresa = set()
 
-    if destinatario and destinatario in cnpjs_empresa:
-        return "Entrada"
-    if emitente and emitente in cnpjs_empresa:
+    emit_e_empresa = emitente in cnpjs_empresa if emitente else False
+    dest_e_empresa = destinatario in cnpjs_empresa if destinatario else False
+
+    # Somente se ambos os CNPJs forem da empresa considerar o CFOP
+    if emit_e_empresa and dest_e_empresa:
+        cfop_str = ""
+        if cfop is not None:
+            try:
+                cfop_str = re.sub(r"\D", "", str(cfop))
+                if len(cfop_str) > 4:
+                    cfop_str = cfop_str[:4]
+                cfop_str = cfop_str.strip()
+            except Exception:
+                cfop_str = ""
+
+        if cfop_str:
+            primeiro = cfop_str[0]
+            if primeiro in {"1", "2"}:
+                return "Entrada"
+            if primeiro in {"5", "6"}:
+                return "Saída"
+            return "Indefinido"
+        # Se não houver CFOP, manter como indefinido
+        return "Indefinido"
+
+    # Casos normais sem CFOP envolvido
+    if emit_e_empresa:
         return "Saída"
+    if dest_e_empresa:
+        return "Entrada"
 
     return "Indefinido"
 
@@ -449,6 +449,14 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
                     if valor:
                         dados[campo] = valor
                         log.debug(f"Extraído {campo}: {valor}")
+
+            # Caso especial: chassi presente apenas como sufixo em xProd
+            if not dados.get("Chassi") and xProd:
+                match = re.search(r"([A-HJ-NPR-Z0-9]{17})\s*$", xProd)
+                if match:
+                    possivel = match.group(1).upper()
+                    if validar_chassi(possivel):
+                        dados["Chassi"] = possivel
 
             # Validações finais dos dados extraídos
             if dados.get("Chassi"):
