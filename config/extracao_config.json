@@ -4,13 +4,13 @@
     "Data Emissão": ".//nfe:ide/nfe:dhEmi",
     "Emitente Nome": ".//nfe:emit/nfe:xNome",
     "Emitente CNPJ": ".//nfe:emit/nfe:CNPJ",
-    "Destinatario Nome": ".//nfe:dest/nfe:xNome",
-    "Destinatario CNPJ": ".//nfe:dest/nfe:CNPJ",
+    "Destinatário Nome": ".//nfe:dest/nfe:xNome",
+    "Destinatário CNPJ": ".//nfe:dest/nfe:CNPJ",
     "Número NF": ".//nfe:ide/nfe:nNF",
     "ICMS": ".//nfe:imposto/nfe:ICMS//nfe:vICMS",
     "CHAVE XML": ".//nfe:infNFe/@Id",
     "Produto": ".//nfe:det/nfe:prod/nfe:xProd",
-    "Natureza Operacao": ".//nfe:ide/nfe:natOp"
+    "Natureza Operação": ".//nfe:ide/nfe:natOp"
   },
   "regex_extracao": {
     "Chassi": "(?:CHASSI|CHAS|CH)[\\s:;.-]*([A-HJ-NPR-Z0-9]{17})",
