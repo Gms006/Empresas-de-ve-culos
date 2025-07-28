@@ -650,12 +650,22 @@ def exportar_para_excel(df: pd.DataFrame, caminho_saida: str) -> bool:
             )
             worksheet.set_column(i, i, max_len + 2)
         
-        # Aplicar formatação condicional para veículos
-        worksheet.conditional_format(1, 0, len(df) + 1, len(df.columns) - 1, {
-            'type': 'formula',
-            'criteria': '=$J2="Veículo"',  # Ajuste para a coluna "Tipo Produto"
-            'format': formato_veiculo
-        })
+        # Aplicar formatação condicional para veículos se a coluna existir
+        if 'Tipo Produto' in df.columns:
+            from xlsxwriter.utility import xl_col_to_name
+            col_idx = df.columns.get_loc('Tipo Produto')
+            col_letter = xl_col_to_name(col_idx)
+            worksheet.conditional_format(
+                1,
+                0,
+                len(df) + 1,
+                len(df.columns) - 1,
+                {
+                    'type': 'formula',
+                    'criteria': f'=${col_letter}2="Veículo"',
+                    'format': formato_veiculo,
+                },
+            )
         
         # Configurar filtros
         worksheet.autofilter(0, 0, len(df), len(df.columns) - 1)
