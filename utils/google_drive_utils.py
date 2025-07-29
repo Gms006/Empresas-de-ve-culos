@@ -209,59 +209,29 @@ def _scan_xmls(service, folder_id: str, prefix: str = "") -> List[Dict[str, str]
                 }
             )
     return entries
-def baixar_xmls_empresa(
-    company_name: str,
-    root_id: str = ROOT_FOLDER_ID,
-    dest_dir: str | None = None,
-) -> Tuple[List[str], List[str]]:
-    """Baixa o ZIP de XMLs da empresa, extrai e retorna os caminhos."""
 
-    if dest_dir is None:
-        dest_dir = os.getcwd()
 
-    service = get_drive_service()
-    mensagens: List[str] = []
+# --------------------------------------------------------------
+# Funções de alto nível exportadas para uso no aplicativo
+# --------------------------------------------------------------
+from .drive_utils import (
+    criar_servico_drive as _criar_servico_drive,
+    baixar_xmls_empresa_zip as _baixar_xmls_empresa_zip,
+)
 
-    empresa_id = _find_subfolder(service, root_id, company_name)
-    if not empresa_id:
-        mensagens.append(f"Empresa {company_name} não encontrada no Drive.")
-        return [], mensagens
 
-    compactadas_id = _find_subfolder(service, empresa_id, "NFs Compactadas")
-    if not compactadas_id:
-        mensagens.append("Subpasta 'NFs Compactadas' não encontrada.")
-        return [], mensagens
+def criar_servico_drive():
+    """Wrapper para ``drive_utils.criar_servico_drive``."""
 
-    arquivos = _list_files(service, compactadas_id)
-    zips = [f for f in arquivos if f["name"].lower().endswith(".zip")]
-    if not zips:
-        mensagens.append("Nenhum arquivo ZIP localizado em 'NFs Compactadas'.")
-        return [], mensagens
+    return _criar_servico_drive()
 
-    zips.sort(key=lambda f: f.get("modifiedTime", ""), reverse=True)
-    zip_info = zips[0]
-    zip_path = os.path.join(dest_dir, zip_info["name"])
 
-    os.makedirs(dest_dir, exist_ok=True)
-    mensagens.append(f"Baixando {zip_info['name']} do Drive...")
-    request = service.files().get_media(fileId=zip_info["id"])
-    with io.FileIO(zip_path, "wb") as fh:
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
+def baixar_xmls_empresa_zip(
+    service,
+    pasta_principal_id: str,
+    nome_empresa: str,
+    dest_dir: str,
+) -> List[str]:
+    """Wrapper para ``drive_utils.baixar_xmls_empresa_zip``."""
 
-    mensagens.append("Extraindo XMLs...")
-    xml_paths: List[str] = []
-    try:
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            for name in zf.namelist():
-                if name.lower().endswith(".xml"):
-                    zf.extract(name, dest_dir)
-                    xml_paths.append(os.path.join(dest_dir, name))
-    except Exception as exc:
-        mensagens.append(f"Erro ao extrair ZIP: {exc}")
-        return [], mensagens
-
-    mensagens.append(f"{len(xml_paths)} XMLs extraídos do ZIP.")
-    return xml_paths, mensagens
+    return _baixar_xmls_empresa_zip(service, pasta_principal_id, nome_empresa, dest_dir)

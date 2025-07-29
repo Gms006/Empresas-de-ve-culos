@@ -5,28 +5,33 @@ from __future__ import annotations
 import os
 from typing import List, Optional
 
+import json
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 
 
-def criar_servico_drive(caminho_chave: str):
-    """Cria um serviço de acesso ao Google Drive.
+def criar_servico_drive():
+    """Cria um serviço de acesso ao Google Drive usando ``GCP_SERVICE_ACCOUNT_JSON``.
 
-    Parameters
-    ----------
-    caminho_chave: str
-        Caminho para o arquivo JSON de chave de serviço do Google.
-
-    Returns
-    -------
-    googleapiclient.discovery.Resource
-        Instância do serviço configurado para acesso somente leitura.
+    A variável de ambiente deve conter o JSON completo da chave de serviço.
     """
 
     scopes = ["https://www.googleapis.com/auth/drive.readonly"]
-    creds = Credentials.from_service_account_file(caminho_chave, scopes=scopes)
+    raw_json = os.getenv("GCP_SERVICE_ACCOUNT_JSON")
+    if not raw_json:
+        raise EnvironmentError(
+            "Variável GCP_SERVICE_ACCOUNT_JSON não definida"
+        )
+    try:
+        info = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "Conteúdo inválido em GCP_SERVICE_ACCOUNT_JSON"
+        ) from exc
+
+    creds = Credentials.from_service_account_info(info, scopes=scopes)
     return build("drive", "v3", credentials=creds)
 
 
@@ -99,7 +104,7 @@ def baixar_xmls_da_pasta(service, pasta_id: str, destino: str) -> List[str]:
     return caminhos
 
 
-def baixar_xmls_empresa(
+def baixar_xmls_empresa_zip(
     service,
     pasta_principal_id: str,
     nome_empresa: str,
