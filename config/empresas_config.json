@@ -1,1 +1,14 @@
-429: Too Many Requests
+{
+  "bda": {
+    "nome": "BDA COMERCIO E INTERMEDIACAO DE VEICULOS LTDA",
+    "cnpj_emitentes": ["278657578000119"]
+  },
+  "eduardo": {
+    "nome": "EDUARDO VEICULOS LTDA",
+    "cnpj_emitentes": ["34919927000141"]
+  },
+  "radial": {
+    "nome": "RADIAL CONSIGNACOES LTDA",
+    "cnpj_emitentes": ["18775013000106"]
+  }
+}
