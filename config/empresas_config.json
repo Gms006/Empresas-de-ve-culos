@@ -1,15 +1,23 @@
 {
   "bda": {
-    "nome": "BDA COMERCIO",
-    "cnpj_emitentes": [
-      "41492247000150"
-    ],
+    "nome": "BDA COMERCIO E INTERMEDIACAO DE VEICULOS LTDA",
+    "cnpj_emitentes": ["27865757000119"],
     "nomes_proprios": [
-      "BDA COMERCIO",
-      "BDA COM\u00c9RCIO",
-      "BDA COMERCIO E INTERMEDIACAO DE VEICULOS LTDA",
-      "BDA COMERCIO E INTERMEDIA\u00c7\u00c3O DE VEICULOS LTDA",
-      "BDA COMERCIO E INTERMED DE VEICULOS LTDA"
+      "BDA COMERCIO E INTERMEDIACAO DE VEICULOS LTDA"
+    ]
+  },
+  "eduardo": {
+    "nome": "EDUARDO VEICULOS LTDA",
+    "cnpj_emitentes": ["34919927000141"],
+    "nomes_proprios": [
+      "EDUARDO VEICULOS LTDA"
+    ]
+  },
+  "radial": {
+    "nome": "RADIAL CONSIGNACOES LTDA",
+    "cnpj_emitentes": ["18775013000106"],
+    "nomes_proprios": [
+      "RADIAL CONSIGNACOES LTDA"
     ]
   }
 }
