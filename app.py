@@ -120,11 +120,25 @@ with st.sidebar:
         empresa_selecionada_nome = None
         chave_empresa = None
         cnpj_empresa = None
+        tipo_nota_selecionada = None
+        origem_arquivos = "Upload Manual"
     else:
-        empresa_selecionada_nome = st.selectbox("🏢 Selecione a Empresa", options=opcoes_empresas.keys())
+        empresa_selecionada_nome = st.selectbox(
+            "🏢 Selecione a Empresa", options=opcoes_empresas.keys()
+        )
         chave_empresa = opcoes_empresas[empresa_selecionada_nome]
-        cnpj_empresa = empresas[chave_empresa]['cnpj_emitentes'][0]
+        cnpj_empresa = empresas[chave_empresa]["cnpj_emitentes"][0]
         st.markdown(f"**CNPJ Selecionado:** `{cnpj_empresa}`")
+
+        tipo_nota_selecionada = st.selectbox(
+            "📂 Tipo de Nota", ["Entradas", "Saídas", "Ambas"]
+        )
+
+        origem_arquivos = st.radio(
+            "Origem dos XMLs",
+            ["Google Drive", "Upload Manual"],
+            horizontal=True,
+        )
 
     # Botão para limpar dados
     if st.session_state.dados_processados:
@@ -230,6 +244,49 @@ def processar_arquivos(xml_paths, cnpj_empresa):
         status_text.empty()
         progresso.empty()
         return pd.DataFrame()
+
+# Execução completa de processamento e geração de relatórios
+def executar_pipeline(xml_paths, cnpj_empresa):
+    if not xml_paths:
+        st.warning("⚠️ Nenhum arquivo XML encontrado.")
+        return
+
+    df_extraido = processar_arquivos(xml_paths, cnpj_empresa)
+
+    if df_extraido.empty:
+        st.warning("⚠️ Nenhum dado extraído dos XMLs.")
+        return
+
+    try:
+        df_configurado = configurar_planilha(df_extraido)
+        st.session_state.df_configurado = df_configurado
+
+        if 'Tipo Nota' in df_configurado.columns:
+            df_entrada = df_configurado[df_configurado['Tipo Nota'] == 'Entrada'].copy()
+            df_saida = df_configurado[df_configurado['Tipo Nota'] == 'Saída'].copy()
+
+            with st.spinner("Gerando relatórios..."):
+                df_estoque = gerar_estoque_fiscal(df_entrada, df_saida)
+                st.session_state.df_estoque = df_estoque
+
+                df_alertas = gerar_alertas_auditoria(df_entrada, df_saida)
+                st.session_state.df_alertas = df_alertas
+
+                st.session_state.kpis = gerar_kpis(df_estoque)
+
+                df_resumo = gerar_resumo_mensal(df_estoque)
+                st.session_state.df_resumo = df_resumo
+
+                df_apuracao, _ = calcular_apuracao(df_estoque)
+                st.session_state.df_apuracao = df_apuracao
+
+                st.session_state.dados_processados = True
+
+                st.success("✅ XMLs processados com sucesso!")
+        else:
+            st.error("❌ A coluna 'Tipo Nota' não foi gerada. Verifique a classificação.")
+    except Exception as e:
+        st.error(f"Erro ao processar dados: {e}")
 
 # Execução completa de processamento e geração de relatórios
 def executar_pipeline(xml_paths, cnpj_empresa):
