@@ -119,8 +119,6 @@ with st.sidebar:
         empresa_selecionada_nome = None
         chave_empresa = None
         cnpj_empresa = None
-        tipo_nota_selecionada = None
-        origem_arquivos = "Upload Manual"
     else:
         empresa_selecionada_nome = st.selectbox(
             "🏢 Selecione a Empresa", options=opcoes_empresas.keys()
@@ -129,15 +127,7 @@ with st.sidebar:
         cnpj_empresa = empresas[chave_empresa]["cnpj_emitentes"][0]
         st.markdown(f"**CNPJ Selecionado:** `{cnpj_empresa}`")
 
-        tipo_nota_selecionada = st.selectbox(
-            "📂 Tipo de Nota", ["Entradas", "Saídas", "Ambas"]
-        )
 
-        origem_arquivos = st.radio(
-            "Origem dos XMLs",
-            ["Google Drive", "Upload Manual"],
-            horizontal=True,
-        )
 
     # Botão para limpar dados
     if st.session_state.dados_processados:
@@ -413,7 +403,6 @@ with upload_area:
         st.stop()
 
     modo = st.radio("Fonte dos XMLs", ["Google Drive", "Upload Manual"])
-    tipo_nota = st.selectbox("Tipo de Nota", ["Entradas", "Saídas", "Ambas"])
 
     if modo == "Google Drive":
         if st.button("📂 Buscar XMLs do Drive"):
@@ -421,7 +410,6 @@ with upload_area:
                 with tempfile.TemporaryDirectory() as tmpdir:
                     xml_paths, mensagens = baixar_xmls_empresa(
                         empresa_selecionada_nome,
-                        tipo_nota,
                         dest_dir=tmpdir,
                     )
                     for msg in mensagens:
