@@ -218,10 +218,10 @@ from .drive_utils import (
 )
 
 
-def criar_servico_drive(caminho_chave: str):
+def criar_servico_drive():
     """Wrapper para ``drive_utils.criar_servico_drive``."""
 
-    return _criar_servico_drive(caminho_chave)
+    return _criar_servico_drive()
 
 
 def baixar_xmls_empresa_zip(
