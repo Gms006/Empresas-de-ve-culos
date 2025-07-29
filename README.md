@@ -6,13 +6,12 @@ Este projeto contém uma aplicação [Streamlit](https://streamlit.io/) para an�
 
 Os XMLs podem ser importados automaticamente de uma pasta no Google Drive. Para habilitar esta funcionalidade:
 
-1. Salve o arquivo de chave do serviço Google no caminho `Chave_Veiculos.json`.
+1. Defina a variável de ambiente `GCP_SERVICE_ACCOUNT_JSON` com o conteúdo JSON da chave de serviço do Google.
 2. Confirme que suas empresas e respectivos CNPJs estão definidos em `config/empresas_config.json`.
-3. Defina a variável de ambiente `GCP_SERVICE_ACCOUNT_JSON` com o conteúdo do JSON de serviço.
-4. Execute a aplicação com `streamlit run app.py` e selecione:
+3. Execute a aplicação com `streamlit run app.py` e selecione:
    - A empresa desejada
    - A opção **Google Drive** (ou *Upload Manual*) como origem
-5. Clique em **"Buscar XMLs do Drive"** para iniciar o download e processamento.
+4. Clique em **"Buscar XMLs do Drive"** para iniciar o download e processamento.
 
 O ID da pasta principal do Drive é `1ADaMbXNPEX8ZIT7c1U_pWMsRygJFROZq`. Dentro dela cada empresa possui uma subpasta chamada `NFs Compactadas` contendo um único arquivo ZIP com todos os XMLs da empresa. O sistema baixa automaticamente esse arquivo, extrai os XMLs e processa tudo de uma vez.
 
