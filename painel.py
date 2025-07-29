@@ -91,7 +91,6 @@ def main():
     _init_session()
 
     LOGO = Path("config/logo.png")
-
     st.markdown(
         """
         <style>
@@ -183,7 +182,6 @@ def main():
             """,
             unsafe_allow_html=True,
         )
-
     if not st.session_state.processado:
         st.warning("Nenhum dado carregado. Importe os XMLs para visualizar o painel.")
         return
