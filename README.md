@@ -15,6 +15,8 @@ Os XMLs podem ser importados automaticamente de uma pasta no Google Drive. Para 
    - A opção **Google Drive** como origem
 5. Clique em **"Buscar XMLs do Drive"** para iniciar o download e processamento.
 
-O ID da pasta principal do Drive é `1ADaMbXNPEX8ZIT7c1U_pWMsRygJFROZq`. Dentro dela cada empresa possui as subpastas `Entradas` e `Saidas` contendo os XMLs.
+O ID da pasta principal do Drive é `1ADaMbXNPEX8ZIT7c1U_pWMsRygJFROZq`. Dentro dela cada empresa possui subpastas mensais (ex: `01-2024`, `02-2024` etc) onde ficam todos os XMLs.
+
+Para agilizar a leitura, cada pasta de empresa contém um arquivo `index_arquivos.json` com o mapeamento dos XMLs (ID, caminho, data de modificação e tipo de nota). Esse índice é criado e atualizado automaticamente durante o download.
 
 O upload manual de arquivos continua disponível selecionando a opção *Upload Manual*.
