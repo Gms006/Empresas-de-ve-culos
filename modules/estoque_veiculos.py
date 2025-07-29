@@ -7,7 +7,7 @@ import re
 import logging
 from modules.configurador_planilha import configurar_planilha
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -130,12 +130,19 @@ def classificar_tipo_nota(
     destinatario_cnpj: Optional[str],
     cnpj_empresa: Union[str, List[str], None],
     cfop: Optional[str],
-) -> str:
-    """Classifica a nota como ``Entrada``, ``Saída`` ou ``Indefinido``.
+    *,
+    retornar_alerta: bool = False,
+) -> Union[str, Tuple[str, str]]:
+    """Classifica a nota como ``Entrada``, ``Saída`` ou ``Indefinido`` e gera alertas.
 
-    A regra considera o CFOP **apenas** se o emitente e o destinatário forem a
-    própria empresa. Caso contrário, a determinação depende apenas de qual CNPJ
-    coincide com o da empresa.
+    Regras principais:
+    1. Se o destinatário for a empresa, sempre ``Entrada``.
+    2. Se o emitente for a empresa e o CFOP começar com ``5``, ``6`` ou ``7``, é
+       ``Saída``.
+    3. Se o emitente for a empresa e o CFOP for de entrada (``1``, ``2`` ou
+       ``3``), é ``Entrada`` com alerta de possível erro.
+    4. Nos demais casos o resultado é ``Indefinido``. Caso o CFOP indique
+       entrada mas a empresa não esteja envolvida, registra alerta.
     """
 
     emitente = normalizar_cnpj(emitente_cnpj)
@@ -151,35 +158,51 @@ def classificar_tipo_nota(
     emit_e_empresa = emitente in cnpjs_empresa if emitente else False
     dest_e_empresa = destinatario in cnpjs_empresa if destinatario else False
 
-    # Somente se ambos os CNPJs forem da empresa considerar o CFOP
-    if emit_e_empresa and dest_e_empresa:
-        cfop_str = ""
-        if cfop is not None:
-            try:
-                cfop_str = re.sub(r"\D", "", str(cfop))
-                if len(cfop_str) > 4:
-                    cfop_str = cfop_str[:4]
-                cfop_str = cfop_str.strip()
-            except Exception:
-                cfop_str = ""
+    alerta = ""
 
-        if cfop_str:
-            primeiro = cfop_str[0]
-            if primeiro in {"1", "2"}:
-                return "Entrada"
-            if primeiro in {"5", "6"}:
-                return "Saída"
-            return "Indefinido"
-        # Se não houver CFOP, manter como indefinido
-        return "Indefinido"
+    cfop_str = ""
+    if cfop is not None:
+        try:
+            cfop_str = re.sub(r"\D", "", str(cfop))
+            if len(cfop_str) > 4:
+                cfop_str = cfop_str[:4]
+            cfop_str = cfop_str.strip()
+        except Exception:
+            cfop_str = ""
 
-    # Casos normais sem CFOP envolvido
-    if emit_e_empresa:
-        return "Saída"
+    cfop_ini = cfop_str[0] if cfop_str else ""
+
     if dest_e_empresa:
-        return "Entrada"
+        tipo = "Entrada"
+        if emit_e_empresa and cfop_ini in {"1", "2", "3"}:
+            alerta = (
+                "Entrada emitida pela própria empresa, possível erro de emissão."
+            )
+        if retornar_alerta:
+            return tipo, alerta
+        return tipo
 
-    return "Indefinido"
+    if emit_e_empresa:
+        if cfop_ini in {"5", "6", "7"}:
+            tipo = "Saída"
+        elif cfop_ini in {"1", "2", "3"}:
+            tipo = "Entrada"
+            alerta = (
+                "Entrada emitida pela própria empresa, possível erro de emissão."
+            )
+        else:
+            tipo = "Indefinido"
+        if retornar_alerta:
+            return tipo, alerta
+        return tipo
+
+    tipo = "Indefinido"
+    if cfop_ini in {"1", "2", "3"}:
+        alerta = "Nota não envolve a empresa, mas CFOP é de entrada. Verificar!"
+
+    if retornar_alerta:
+        return tipo, alerta
+    return tipo
 
 def classificar_produto(row: Dict[str, Any]) -> str:
     """Classifica o item como veículo apenas se houver chassi."""
@@ -577,14 +600,16 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
 
     df['Empresa CNPJ'] = empresa_padrao
 
-    df['Tipo Nota'] = df.apply(
+    df[['Tipo Nota', 'Alerta Auditoria']] = df.apply(
         lambda row: classificar_tipo_nota(
             row['Emitente CNPJ/CPF'],
             row['Destinatário CNPJ/CPF'],
             cnpj_empresa,
             row.get('CFOP'),
+            retornar_alerta=True,
         ),
         axis=1,
+        result_type='expand',
     )
     df['Tipo Produto'] = df.apply(classificar_produto, axis=1)
 
@@ -632,6 +657,7 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
         "Empresa CNPJ",
         "Tipo Produto",
         "Mês Emissão",
+        "Alerta Auditoria",
     ]
     # Garantir todas as colunas
     for col in nova_ordem:

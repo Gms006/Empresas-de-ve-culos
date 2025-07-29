@@ -99,6 +99,7 @@ def test_processar_xmls_filters_columns(tmp_path):
         "Empresa CNPJ",
         "Tipo Produto",
         "Mês Emissão",
+        "Alerta Auditoria",
     ]
     assert list(df.columns) == expected_cols
 
