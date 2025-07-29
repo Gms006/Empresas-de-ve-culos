@@ -209,8 +209,6 @@ def _scan_xmls(service, folder_id: str, prefix: str = "") -> List[Dict[str, str]
                 }
             )
     return entries
-
-
 # --------------------------------------------------------------
 # Funções de alto nível exportadas para uso no aplicativo
 # --------------------------------------------------------------
