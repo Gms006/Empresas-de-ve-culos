@@ -25,6 +25,12 @@ except Exception:
         "Ano Modelo": {"tipo": "int", "ordem": 11},
         "Ano Fabricação": {"tipo": "int", "ordem": 12},
         "Cor": {"tipo": "str", "ordem": 13},
+        "ICMS Alíquota": {"tipo": "float", "ordem": 14},
+        "ICMS Valor": {"tipo": "float", "ordem": 15},
+        "ICMS Base": {"tipo": "float", "ordem": 16},
+        "CST ICMS": {"tipo": "str", "ordem": 17},
+        "Redução BC": {"tipo": "float", "ordem": 18},
+        "Modalidade BC": {"tipo": "str", "ordem": 19},
         "Natureza Operação": {"tipo": "str", "ordem": 99},
         "CHAVE XML": {"tipo": "str", "ordem": 100},
     }

@@ -397,15 +397,27 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
 
             log.debug(f"Processando item {i}: {dados['Produto'][:50]}...")
 
-            # Valor do ICMS do item
+            # Dados de ICMS do item
             try:
-                icms_text = item.findtext(
-                    xpath_campos.get('ICMS', './/nfe:imposto/nfe:ICMS//nfe:vICMS'),
-                    namespaces=ns,
-                )
-                dados['ICMS'] = float(icms_text) if icms_text is not None else None
+                icms_data = {}
+                icms_element = item.find('.//nfe:imposto/nfe:ICMS', namespaces=ns)
+                if icms_element is not None:
+                    for icms_tipo in [
+                        'ICMS00','ICMS10','ICMS20','ICMS30','ICMS40','ICMS41',
+                        'ICMS50','ICMS51','ICMS60','ICMS70','ICMS90'
+                    ]:
+                        grupo = icms_element.find(f'nfe:{icms_tipo}', namespaces=ns)
+                        if grupo is not None:
+                            icms_data['CST ICMS'] = grupo.findtext('nfe:CST', namespaces=ns)
+                            icms_data['ICMS Alíquota'] = grupo.findtext('nfe:pICMS', namespaces=ns)
+                            icms_data['ICMS Valor'] = grupo.findtext('nfe:vICMS', namespaces=ns)
+                            icms_data['ICMS Base'] = grupo.findtext('nfe:vBC', namespaces=ns)
+                            icms_data['Redução BC'] = grupo.findtext('nfe:pRedBC', namespaces=ns)
+                            icms_data['Modalidade BC'] = grupo.findtext('nfe:modBC', namespaces=ns)
+                            break
+                dados.update(icms_data)
             except Exception as e:
-                log.warning(f"Erro ao processar ICMS do item: {e}")
+                log.warning(f"Erro ao processar dados de ICMS do item: {e}")
 
             # Procurar diretamente campos de veículo na estrutura XML
             try:
@@ -609,6 +621,12 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
         "Ano Modelo",
         "Ano Fabricação",
         "Cor",
+        "ICMS Alíquota",
+        "ICMS Valor",
+        "ICMS Base",
+        "CST ICMS",
+        "Redução BC",
+        "Modalidade BC",
         "Natureza Operação",
         "CHAVE XML",
         "Empresa CNPJ",
