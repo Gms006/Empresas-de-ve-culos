@@ -99,7 +99,7 @@ def baixar_xmls_da_pasta(service, pasta_id: str, destino: str) -> List[str]:
     return caminhos
 
 
-def baixar_xmls_empresa_zip(
+def baixar_xmls_empresa(
     service,
     pasta_principal_id: str,
     nome_empresa: str,
