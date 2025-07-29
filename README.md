@@ -11,12 +11,9 @@ Os XMLs podem ser importados automaticamente de uma pasta no Google Drive. Para 
 3. Defina a variável de ambiente `GCP_SERVICE_ACCOUNT_JSON` com o conteúdo do JSON de serviço.
 4. Execute a aplicação com `streamlit run app.py` e selecione:
    - A empresa desejada
-   - O tipo de nota (Entradas, Saídas ou Ambas)
-   - A opção **Google Drive** como origem
+   - A opção **Google Drive** (ou *Upload Manual*) como origem
 5. Clique em **"Buscar XMLs do Drive"** para iniciar o download e processamento.
 
-O ID da pasta principal do Drive é `1ADaMbXNPEX8ZIT7c1U_pWMsRygJFROZq`. Dentro dela cada empresa possui subpastas mensais (ex: `01-2024`, `02-2024` etc) onde ficam todos os XMLs.
-
-Para agilizar a leitura, cada pasta de empresa contém um arquivo `index_arquivos.json` com o mapeamento dos XMLs (ID, caminho, data de modificação e tipo de nota). Esse índice é criado e atualizado automaticamente durante o download.
+O ID da pasta principal do Drive é `1ADaMbXNPEX8ZIT7c1U_pWMsRygJFROZq`. Dentro dela cada empresa possui uma subpasta chamada `NFs Compactadas` contendo um único arquivo ZIP com todos os XMLs da empresa. O sistema baixa automaticamente esse arquivo, extrai os XMLs e processa tudo de uma vez.
 
 O upload manual de arquivos continua disponível selecionando a opção *Upload Manual*.
