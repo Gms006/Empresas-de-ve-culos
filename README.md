@@ -6,7 +6,7 @@ Este projeto contém uma aplicação [Streamlit](https://streamlit.io/) para an�
 
 Os XMLs podem ser importados automaticamente de uma pasta no Google Drive. Para habilitar esta funcionalidade:
 
-1. Defina a variável de ambiente `GCP_SERVICE_ACCOUNT_JSON` com o conteúdo JSON da chave de serviço do Google.
+1. Defina a variável de ambiente `GCP_SERVICE_ACCOUNT_JSON` com o **JSON completo** da chave de serviço do Google (não um caminho de arquivo).
 2. Confirme que suas empresas e respectivos CNPJs estão definidos em `config/empresas_config.json`.
 3. Execute a aplicação com `streamlit run app.py` e selecione:
    - A empresa desejada
