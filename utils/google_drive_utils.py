@@ -1,11 +1,11 @@
 import os
 import io
 import logging
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 import json
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 ROOT_FOLDER_ID = '1ADaMbXNPEX8ZIT7c1U_pWMsRygJFROZq'
@@ -61,7 +61,7 @@ def _list_files(service, folder_id: str) -> List[dict]:
             service.files()
             .list(
                 q=query,
-                fields="nextPageToken, files(id, name, mimeType)",
+                fields="nextPageToken, files(id, name, mimeType, modifiedTime)",
                 pageToken=page_token,
                 pageSize=1000,
             )
@@ -97,14 +97,122 @@ def _download_files(service, folder_id: str, dest_dir: str) -> List[str]:
         xml_paths.append(path)
     return xml_paths
 
+def _read_index(service, company_id: str) -> Tuple[Dict[str, Dict], str | None]:
+    """Lê o arquivo ``index_arquivos.json`` da empresa."""
+    query = (
+        f"'{company_id}' in parents and "
+        "name='index_arquivos.json' and trashed=false"
+    )
+    res = service.files().list(q=query, fields="files(id)").execute()
+    files = res.get("files")
+    if not files:
+        return {}, None
+    idx_id = files[0]["id"]
+    request = service.files().get_media(fileId=idx_id)
+    buf = io.BytesIO()
+    downloader = MediaIoBaseDownload(buf, request)
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    buf.seek(0)
+    return json.load(buf), idx_id
 
+
+def _write_index(
+    service, company_id: str, index: Dict[str, Dict], file_id: str | None
+) -> str:
+    """Grava ``index_arquivos.json`` na pasta da empresa."""
+    media = MediaIoBaseUpload(
+        io.BytesIO(json.dumps(index, ensure_ascii=False, indent=2).encode("utf-8")),
+        mimetype="application/json",
+        resumable=False,
+    )
+    if file_id:
+        service.files().update(fileId=file_id, media_body=media).execute()
+        return file_id
+    meta = {"name": "index_arquivos.json", "parents": [company_id]}
+    result = service.files().create(body=meta, media_body=media).execute()
+    return result["id"]
+
+
+def _infer_tipo_nota(service, file_id: str) -> str:
+    """Obtém o campo ``tpNF`` do XML para definir Entrada ou Saída."""
+    try:
+        request = service.files().get_media(fileId=file_id)
+        buf = io.BytesIO()
+        downloader = MediaIoBaseDownload(buf, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        buf.seek(0)
+        import xml.etree.ElementTree as ET
+
+        tree = ET.parse(buf)
+        tp_elem = tree.find(
+            ".//{http://www.portalfiscal.inf.br/nfe}tpNF"
+        )
+        if tp_elem is not None:
+            if tp_elem.text == "0":
+                return "Entrada"
+            if tp_elem.text == "1":
+                return "Saída"
+    except Exception:
+        log.exception("Erro ao inferir tipo de nota")
+    return "Indefinido"
+
+
+def atualizar_index_empresa(service, company_id: str) -> Dict[str, Dict]:
+    """Atualiza ou cria o ``index_arquivos.json`` para a empresa."""
+    index, idx_id = _read_index(service, company_id)
+    arquivos = _scan_xmls(service, company_id)
+
+    atual: Dict[str, Dict] = {}
+    for arq in arquivos:
+        file_id = arq["id"]
+        info = index.get(file_id, {})
+        if info.get("modificado") != arq.get("modifiedTime"):
+            tipo = info.get("tipo")
+            if not tipo or info.get("modificado") != arq.get("modifiedTime"):
+                tipo = _infer_tipo_nota(service, file_id)
+            atual[file_id] = {
+                "nome": arq["name"],
+                "caminho": arq["path"],
+                "modificado": arq.get("modifiedTime"),
+                "tipo": tipo,
+            }
+        else:
+            atual[file_id] = info
+
+    changed = index != atual
+    if changed:
+        _write_index(service, company_id, atual, idx_id)
+    return atual
+
+
+def _scan_xmls(service, folder_id: str, prefix: str = "") -> List[Dict[str, str]]:
+    """Retorna metadados de todos os XMLs abaixo de ``folder_id``."""
+    entries: List[Dict[str, str]] = []
+    files = _list_files(service, folder_id)
+    for f in files:
+        if f["mimeType"] == "application/vnd.google-apps.folder":
+            new_prefix = os.path.join(prefix, f["name"])
+            entries.extend(_scan_xmls(service, f["id"], new_prefix))
+            continue
+        if f["name"].lower().endswith(".xml"):
+            entries.append(
+                {
+                    "id": f["id"],
+                    "name": f["name"],
+                    "path": os.path.join(prefix, f["name"]),
+                    "modifiedTime": f.get("modifiedTime"),
+                }
+            )
+    return entries
 def baixar_xmls_empresa(
     company_name: str,
     tipo: str,
     root_id: str = ROOT_FOLDER_ID,
     dest_dir: str | None = None,
-    folder_entradas: str = "Entradas",
-    folder_saidas: str = "Saidas",
 ) -> Tuple[List[str], List[str]]:
     """Baixa XMLs de uma empresa no Google Drive.
 
@@ -120,22 +228,30 @@ def baixar_xmls_empresa(
         mensagens.append(f'Empresa {company_name} não encontrada no Drive.')
         return [], mensagens
 
+    index = atualizar_index_empresa(service, empresa_id)
     xml_paths: List[str] = []
-    tipos_map = []
-    tipo_lower = tipo.lower()
-    if tipo_lower in ("entradas", "ambas"):
-        tipos_map.append(folder_entradas)
-    if tipo_lower in ("saídas", "saidas", "ambas"):
-        tipos_map.append(folder_saidas)
 
-    for pasta in tipos_map:
-        pasta_id = _find_subfolder(service, empresa_id, pasta)
-        if not pasta_id:
-            mensagens.append(f'Subpasta {pasta} não encontrada para {company_name}.')
+    tipo_lower = tipo.lower()
+    for file_id, info in index.items():
+        tipo_nota = info.get("tipo", "").lower()
+        if tipo_lower not in ("entradas", "saidas", "saídas", "ambas"):
             continue
-        baixados = _download_files(service, pasta_id, dest_dir)
-        if not baixados:
-            mensagens.append(f'Nenhum XML em {pasta} para {company_name}.')
-        xml_paths.extend(baixados)
+        if tipo_lower == "entradas" and not tipo_nota.startswith("entrada"):
+            continue
+        if tipo_lower in ("saidas", "saídas") and not tipo_nota.startswith("saída"):
+            continue
+
+        request = service.files().get_media(fileId=file_id)
+        dest_path = os.path.join(dest_dir, info["path"]) if dest_dir else info["path"]
+        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+        fh = io.FileIO(dest_path, "wb")
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        xml_paths.append(dest_path)
+
+    if not xml_paths:
+        mensagens.append("Nenhum XML encontrado para o tipo solicitado.")
 
     return xml_paths, mensagens
