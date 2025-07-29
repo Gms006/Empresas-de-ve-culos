@@ -97,7 +97,6 @@ def _download_files(service, folder_id: str, dest_dir: str) -> List[str]:
         xml_paths.append(path)
     return xml_paths
 
-
 def _read_index(service, company_id: str) -> Tuple[Dict[str, Dict], str | None]:
     """Lê o arquivo ``index_arquivos.json`` da empresa."""
     query = (
@@ -209,8 +208,6 @@ def _scan_xmls(service, folder_id: str, prefix: str = "") -> List[Dict[str, str]
                 }
             )
     return entries
-
-
 def baixar_xmls_empresa(
     company_name: str,
     tipo: str,
