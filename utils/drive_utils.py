@@ -57,7 +57,11 @@ def listar_arquivos(service, pasta_id: str) -> List[dict]:
     while True:
         res = (
             service.files()
-            .list(q=query, fields="nextPageToken, files(id,name)", pageToken=page_token)
+            .list(
+                q=query,
+                fields="nextPageToken, files(id,name,modifiedTime)",
+                pageToken=page_token,
+            )
             .execute()
         )
         arquivos.extend(res.get("files", []))
@@ -99,28 +103,37 @@ def baixar_xmls_empresa(
     service,
     pasta_principal_id: str,
     nome_empresa: str,
-    tipo_nota: str,
     destino: str,
 ) -> List[str]:
-    """Baixa os XMLs de uma empresa de acordo com o tipo de nota escolhido."""
+    """Baixa o ZIP mais recente da empresa e extrai todos os XMLs."""
 
     empresa_id = _buscar_subpasta_id(service, pasta_principal_id, nome_empresa)
     if not empresa_id:
-        raise FileNotFoundError(f"Pasta da empresa '{nome_empresa}' não encontrada no Drive")
+        raise FileNotFoundError(
+            f"Pasta da empresa '{nome_empresa}' não encontrada no Drive"
+        )
 
-    tipos = []
-    tipo_nota = tipo_nota.lower()
-    if tipo_nota in {"entradas", "ambas", "ambos"}:
-        tipos.append("Entradas")
-    if tipo_nota in {"saídas", "saidas", "ambas", "ambos"}:
-        tipos.append("Saidas")
+    compactadas_id = _buscar_subpasta_id(service, empresa_id, "NFs Compactadas")
+    if not compactadas_id:
+        return []
 
-    caminhos = []
-    for t in tipos:
-        sub_id = _buscar_subpasta_id(service, empresa_id, t)
-        if sub_id:
-            caminhos.extend(
-                baixar_xmls_da_pasta(service, sub_id, os.path.join(destino, t))
-            )
-    return caminhos
+    arquivos = listar_arquivos(service, compactadas_id)
+    zips = [a for a in arquivos if a["name"].lower().endswith(".zip")]
+    if not zips:
+        return []
 
+    zips.sort(key=lambda a: a.get("modifiedTime", ""), reverse=True)
+    info_zip = zips[0]
+    zip_path = os.path.join(destino, info_zip["name"])
+
+    baixar_arquivo(service, info_zip["id"], zip_path)
+
+    import zipfile
+
+    xmls: List[str] = []
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        for name in zf.namelist():
+            if name.lower().endswith(".xml"):
+                zf.extract(name, destino)
+                xmls.append(os.path.join(destino, name))
+    return xmls
