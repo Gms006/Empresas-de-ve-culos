@@ -265,3 +265,29 @@ def baixar_xmls_empresa(
 
     mensagens.append(f"{len(xml_paths)} XMLs extraídos do ZIP.")
     return xml_paths, mensagens
+
+
+# --------------------------------------------------------------
+# Funções de alto nível exportadas para uso no aplicativo
+# --------------------------------------------------------------
+from .drive_utils import (
+    criar_servico_drive as _criar_servico_drive,
+    baixar_xmls_empresa_zip as _baixar_xmls_empresa_zip,
+)
+
+
+def criar_servico_drive(caminho_chave: str):
+    """Wrapper para ``drive_utils.criar_servico_drive``."""
+
+    return _criar_servico_drive(caminho_chave)
+
+
+def baixar_xmls_empresa_zip(
+    service,
+    pasta_principal_id: str,
+    nome_empresa: str,
+    dest_dir: str,
+) -> List[str]:
+    """Wrapper para ``drive_utils.baixar_xmls_empresa_zip``."""
+
+    return _baixar_xmls_empresa_zip(service, pasta_principal_id, nome_empresa, dest_dir)
