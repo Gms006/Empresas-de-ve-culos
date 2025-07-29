@@ -25,7 +25,6 @@ from modules.apuracao_fiscal import calcular_apuracao
 from utils.filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
 from utils.formatador_utils import formatar_moeda, formatar_percentual
 from utils.interface_utils import formatar_df_exibicao
-from utils.google_drive_utils import baixar_xmls_empresa
 
 # Configuração da página
 st.set_page_config(
@@ -118,11 +117,25 @@ with st.sidebar:
         empresa_selecionada_nome = None
         chave_empresa = None
         cnpj_empresa = None
+        tipo_nota_selecionada = None
+        origem_arquivos = "Upload Manual"
     else:
-        empresa_selecionada_nome = st.selectbox("🏢 Selecione a Empresa", options=opcoes_empresas.keys())
+        empresa_selecionada_nome = st.selectbox(
+            "🏢 Selecione a Empresa", options=opcoes_empresas.keys()
+        )
         chave_empresa = opcoes_empresas[empresa_selecionada_nome]
-        cnpj_empresa = empresas[chave_empresa]['cnpj_emitentes'][0]
+        cnpj_empresa = empresas[chave_empresa]["cnpj_emitentes"][0]
         st.markdown(f"**CNPJ Selecionado:** `{cnpj_empresa}`")
+
+        tipo_nota_selecionada = st.selectbox(
+            "📂 Tipo de Nota", ["Entradas", "Saídas", "Ambas"]
+        )
+
+        origem_arquivos = st.radio(
+            "Origem dos XMLs",
+            ["Google Drive", "Upload Manual"],
+            horizontal=True,
+        )
 
     # Botão para limpar dados
     if st.session_state.dados_processados:
