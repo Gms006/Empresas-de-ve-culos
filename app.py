@@ -26,9 +26,6 @@ from utils.filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
 from utils.formatador_utils import formatar_moeda, formatar_percentual
 from utils.interface_utils import formatar_df_exibicao
 
-# Pasta principal no Google Drive contendo as subpastas de empresas
-PASTA_PRINCIPAL_DRIVE = "1ADaMbXNPEX8ZIT7c1U_pWMsRygJFROZq"
-
 # Configuração da página
 st.set_page_config(
     page_title="Painel Fiscal de Veículos", 
@@ -245,6 +242,49 @@ def processar_arquivos(xml_paths, cnpj_empresa):
         progresso.empty()
         return pd.DataFrame()
 
+# Execução completa de processamento e geração de relatórios
+def executar_pipeline(xml_paths, cnpj_empresa):
+    if not xml_paths:
+        st.warning("⚠️ Nenhum arquivo XML encontrado.")
+        return
+
+    df_extraido = processar_arquivos(xml_paths, cnpj_empresa)
+
+    if df_extraido.empty:
+        st.warning("⚠️ Nenhum dado extraído dos XMLs.")
+        return
+
+    try:
+        df_configurado = configurar_planilha(df_extraido)
+        st.session_state.df_configurado = df_configurado
+
+        if 'Tipo Nota' in df_configurado.columns:
+            df_entrada = df_configurado[df_configurado['Tipo Nota'] == 'Entrada'].copy()
+            df_saida = df_configurado[df_configurado['Tipo Nota'] == 'Saída'].copy()
+
+            with st.spinner("Gerando relatórios..."):
+                df_estoque = gerar_estoque_fiscal(df_entrada, df_saida)
+                st.session_state.df_estoque = df_estoque
+
+                df_alertas = gerar_alertas_auditoria(df_entrada, df_saida)
+                st.session_state.df_alertas = df_alertas
+
+                st.session_state.kpis = gerar_kpis(df_estoque)
+
+                df_resumo = gerar_resumo_mensal(df_estoque)
+                st.session_state.df_resumo = df_resumo
+
+                df_apuracao, _ = calcular_apuracao(df_estoque)
+                st.session_state.df_apuracao = df_apuracao
+
+                st.session_state.dados_processados = True
+
+                st.success("✅ XMLs processados com sucesso!")
+        else:
+            st.error("❌ A coluna 'Tipo Nota' não foi gerada. Verifique a classificação.")
+    except Exception as e:
+        st.error(f"Erro ao processar dados: {e}")
+
 # Função para criar gráficos
 def criar_grafico_resumo(df_resumo):
     fig, ax = plt.subplots(figsize=(10, 5))
@@ -275,103 +315,42 @@ def criar_grafico_resumo(df_resumo):
     plt.tight_layout()
     return fig
 
-
-def executar_pipeline(xml_paths, cnpj_empresa):
-    """Processa os XMLs baixados ou enviados e atualiza o estado da sessão."""
-
-    if not xml_paths:
-        st.warning("⚠️ Nenhum arquivo XML encontrado para processamento.")
-        return
-
-    df_extraido = processar_arquivos(xml_paths, cnpj_empresa)
-
-    if df_extraido.empty:
-        st.warning("⚠️ Nenhum dado extraído dos XMLs.")
-        return
-
-    try:
-        df_configurado = configurar_planilha(df_extraido)
-        st.session_state.df_configurado = df_configurado
-
-        if 'Tipo Nota' in df_configurado.columns:
-            df_entrada = df_configurado[df_configurado['Tipo Nota'] == 'Entrada'].copy()
-            df_saida = df_configurado[df_configurado['Tipo Nota'] == 'Saída'].copy()
-
-            with st.spinner("Gerando relatórios..."):
-                df_estoque = gerar_estoque_fiscal(df_entrada, df_saida)
-                st.session_state.df_estoque = df_estoque
-
-                df_alertas = gerar_alertas_auditoria(df_entrada, df_saida)
-                st.session_state.df_alertas = df_alertas
-
-                kpis = gerar_kpis(df_estoque)
-                st.session_state.kpis = kpis
-
-                df_resumo = gerar_resumo_mensal(df_estoque)
-                st.session_state.df_resumo = df_resumo
-
-                df_apuracao, _ = calcular_apuracao(df_estoque)
-                st.session_state.df_apuracao = df_apuracao
-
-            st.session_state.dados_processados = True
-            st.success("✅ XMLs processados com sucesso!")
-        else:
-            st.error("❌ A coluna 'Tipo Nota' não foi gerada. Verifique a classificação.")
-    except Exception as e:
-        st.error(f"Erro ao processar dados: {e}")
-
-# Upload ou importação dos arquivos XML
+# Upload ou importação automática dos XMLs
 upload_area = st.container()
 with upload_area:
-    st.markdown('<div class="sub-header">📤 Upload de Arquivos</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">📤 Importação de Arquivos</div>', unsafe_allow_html=True)
 
     if not cnpj_empresa:
-        st.warning("Selecione uma empresa antes de importar os arquivos")
+        st.warning("Selecione uma empresa antes de importar arquivos")
         st.stop()
 
-    if origem_arquivos == "Google Drive":
-        if st.button("🔄 Buscar XMLs do Drive"):
+    modo = st.radio("Fonte dos XMLs", ["Google Drive", "Upload Manual"])
+    tipo_nota = st.selectbox("Tipo de Nota", ["Entradas", "Saídas", "Ambas"])
+
+    if modo == "Google Drive":
+        if st.button("📂 Buscar XMLs do Drive"):
             with st.spinner("Baixando arquivos do Google Drive..."):
                 with tempfile.TemporaryDirectory() as tmpdir:
-                    try:
-                        from utils.drive_utils import criar_servico_drive, baixar_xmls_empresa
-
-                        servico = criar_servico_drive("Chave_Veiculos.json")
-                        xml_paths = baixar_xmls_empresa(
-                            servico,
-                            "1ADaMbXNPEX8ZIT7c1U_pWMsRygJFROZq",
-                            empresa_selecionada_nome,
-                            tipo_nota_selecionada,
-                            tmpdir,
-                        )
-                    except FileNotFoundError as e:
-                        st.warning(str(e))
-                        xml_paths = []
-                    except Exception as e:
-                        st.error(f"Erro ao acessar o Google Drive: {e}")
-                        xml_paths = []
-
+                    xml_paths, mensagens = baixar_xmls_empresa(
+                        empresa_selecionada_nome,
+                        tipo_nota,
+                        dest_dir=tmpdir,
+                    )
+                    for msg in mensagens:
+                        st.info(msg)
                     executar_pipeline(xml_paths, cnpj_empresa)
-        else:
-            st.info("Clique no botão acima para importar os XMLs do Google Drive.")
     else:
         uploaded_files = st.file_uploader(
-            "Envie seus XMLs ou ZIP",
-            type=["xml", "zip"],
-            accept_multiple_files=True,
+            "Envie seus XMLs ou ZIP", type=["xml", "zip"], accept_multiple_files=True
         )
-
         if uploaded_files:
             with st.spinner("Processando arquivos..."):
                 with tempfile.TemporaryDirectory() as tmpdir:
                     xml_paths = []
-
-                    # Processar os arquivos enviados
                     for file in uploaded_files:
                         filepath = os.path.join(tmpdir, file.name)
                         with open(filepath, "wb") as f:
                             f.write(file.read())
-
                         if file.name.lower().endswith(".zip"):
                             try:
                                 with zipfile.ZipFile(filepath, "r") as zip_ref:
