@@ -4,6 +4,7 @@ import zipfile
 import tempfile
 import os
 import json
+from pathlib import Path
 import time
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
@@ -25,6 +26,7 @@ from modules.apuracao_fiscal import calcular_apuracao
 from utils.filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
 from utils.formatador_utils import formatar_moeda, formatar_percentual
 from utils.interface_utils import formatar_df_exibicao
+from utils.google_drive_utils import baixar_xmls_empresa
 
 # Configuração da página
 st.set_page_config(
@@ -104,7 +106,8 @@ with st.sidebar:
 
     # 🔹 Seleção da Empresa
     try:
-        with open('config/empresas_config.json', encoding='utf-8') as f:
+        config_path = Path(__file__).parent / 'config' / 'empresas_config.json'
+        with open(config_path, encoding='utf-8') as f:
             empresas = json.load(f)
     except Exception as e:
         st.error(f"Erro ao carregar configuração de empresas: {e}")
@@ -228,6 +231,49 @@ def processar_arquivos(xml_paths, cnpj_empresa):
         progresso.empty()
         return pd.DataFrame()
 
+# Execução completa de processamento e geração de relatórios
+def executar_pipeline(xml_paths, cnpj_empresa):
+    if not xml_paths:
+        st.warning("⚠️ Nenhum arquivo XML encontrado.")
+        return
+
+    df_extraido = processar_arquivos(xml_paths, cnpj_empresa)
+
+    if df_extraido.empty:
+        st.warning("⚠️ Nenhum dado extraído dos XMLs.")
+        return
+
+    try:
+        df_configurado = configurar_planilha(df_extraido)
+        st.session_state.df_configurado = df_configurado
+
+        if 'Tipo Nota' in df_configurado.columns:
+            df_entrada = df_configurado[df_configurado['Tipo Nota'] == 'Entrada'].copy()
+            df_saida = df_configurado[df_configurado['Tipo Nota'] == 'Saída'].copy()
+
+            with st.spinner("Gerando relatórios..."):
+                df_estoque = gerar_estoque_fiscal(df_entrada, df_saida)
+                st.session_state.df_estoque = df_estoque
+
+                df_alertas = gerar_alertas_auditoria(df_entrada, df_saida)
+                st.session_state.df_alertas = df_alertas
+
+                st.session_state.kpis = gerar_kpis(df_estoque)
+
+                df_resumo = gerar_resumo_mensal(df_estoque)
+                st.session_state.df_resumo = df_resumo
+
+                df_apuracao, _ = calcular_apuracao(df_estoque)
+                st.session_state.df_apuracao = df_apuracao
+
+                st.session_state.dados_processados = True
+
+                st.success("✅ XMLs processados com sucesso!")
+        else:
+            st.error("❌ A coluna 'Tipo Nota' não foi gerada. Verifique a classificação.")
+    except Exception as e:
+        st.error(f"Erro ao processar dados: {e}")
+
 # Função para criar gráficos
 def criar_grafico_resumo(df_resumo):
     fig, ax = plt.subplots(figsize=(10, 5))
@@ -258,86 +304,57 @@ def criar_grafico_resumo(df_resumo):
     plt.tight_layout()
     return fig
 
-# Upload de arquivos XML ou ZIP
+# Upload ou importação automática dos XMLs
 upload_area = st.container()
 with upload_area:
-    st.markdown('<div class="sub-header">📤 Upload de Arquivos</div>', unsafe_allow_html=True)
-    
+    st.markdown('<div class="sub-header">📤 Importação de Arquivos</div>', unsafe_allow_html=True)
+
     if not cnpj_empresa:
-        st.warning("Selecione uma empresa antes de fazer upload de arquivos")
+        st.warning("Selecione uma empresa antes de importar arquivos")
         st.stop()
-    
-    uploaded_files = st.file_uploader("Envie seus XMLs ou ZIP", type=["xml", "zip"], accept_multiple_files=True)
 
-    if uploaded_files:
-        with st.spinner("Processando arquivos..."):
-            with tempfile.TemporaryDirectory() as tmpdir:
-                xml_paths = []
+    modo = st.radio("Fonte dos XMLs", ["Google Drive", "Upload Manual"])
+    tipo_nota = st.selectbox("Tipo de Nota", ["Entradas", "Saídas", "Ambas"])
 
-                # Processar os arquivos enviados
-                for file in uploaded_files:
-                    filepath = os.path.join(tmpdir, file.name)
-                    with open(filepath, "wb") as f:
-                        f.write(file.read())
+    if modo == "Google Drive":
+        if st.button("📂 Buscar XMLs do Drive"):
+            with st.spinner("Baixando arquivos do Google Drive..."):
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    xml_paths, mensagens = baixar_xmls_empresa(
+                        empresa_selecionada_nome,
+                        tipo_nota,
+                        dest_dir=tmpdir,
+                    )
+                    for msg in mensagens:
+                        st.info(msg)
+                    executar_pipeline(xml_paths, cnpj_empresa)
+    else:
+        uploaded_files = st.file_uploader(
+            "Envie seus XMLs ou ZIP", type=["xml", "zip"], accept_multiple_files=True
+        )
+        if uploaded_files:
+            with st.spinner("Processando arquivos..."):
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    xml_paths = []
+                    for file in uploaded_files:
+                        filepath = os.path.join(tmpdir, file.name)
+                        with open(filepath, "wb") as f:
+                            f.write(file.read())
+                        if file.name.lower().endswith(".zip"):
+                            try:
+                                with zipfile.ZipFile(filepath, "r") as zip_ref:
+                                    zip_ref.extractall(tmpdir)
+                                    xml_paths += [
+                                        os.path.join(tmpdir, name)
+                                        for name in zip_ref.namelist()
+                                        if name.lower().endswith(".xml")
+                                    ]
+                            except Exception as e:
+                                st.error(f"Erro ao extrair arquivo ZIP {file.name}: {e}")
+                        elif file.name.lower().endswith(".xml"):
+                            xml_paths.append(filepath)
 
-                    if file.name.lower().endswith(".zip"):
-                        try:
-                            with zipfile.ZipFile(filepath, "r") as zip_ref:
-                                zip_ref.extractall(tmpdir)
-                                xml_paths += [os.path.join(tmpdir, name) for name in zip_ref.namelist() if name.lower().endswith(".xml")]
-                        except Exception as e:
-                            st.error(f"Erro ao extrair arquivo ZIP {file.name}: {e}")
-                    elif file.name.lower().endswith(".xml"):
-                        xml_paths.append(filepath)
-
-                # Processar os XMLs
-                if xml_paths:
-                    df_extraido = processar_arquivos(xml_paths, cnpj_empresa)
-
-                    if df_extraido.empty:
-                        st.warning("⚠️ Nenhum dado extraído dos XMLs. Verifique os arquivos enviados.")
-                    else:
-                        try:
-                            # Configurar planilha
-                            df_configurado = configurar_planilha(df_extraido)
-                            st.session_state.df_configurado = df_configurado
-                            
-                            # Processar dados
-                            if 'Tipo Nota' in df_configurado.columns:
-                                df_entrada = df_configurado[df_configurado['Tipo Nota'] == 'Entrada'].copy()
-                                df_saida = df_configurado[df_configurado['Tipo Nota'] == 'Saída'].copy()
-                                
-                                with st.spinner("Gerando relatórios..."):
-                                    # Estoque fiscal
-                                    df_estoque = gerar_estoque_fiscal(df_entrada, df_saida)
-                                    st.session_state.df_estoque = df_estoque
-                                    
-                                    # Alertas de auditoria
-                                    df_alertas = gerar_alertas_auditoria(df_entrada, df_saida)
-                                    st.session_state.df_alertas = df_alertas
-                                    
-                                    # KPIs
-                                    kpis = gerar_kpis(df_estoque)
-                                    st.session_state.kpis = kpis
-                                    
-                                    # Resumo mensal
-                                    df_resumo = gerar_resumo_mensal(df_estoque)
-                                    st.session_state.df_resumo = df_resumo
-                                    
-                                    # Apuração fiscal
-                                    df_apuracao, _ = calcular_apuracao(df_estoque)
-                                    st.session_state.df_apuracao = df_apuracao
-                                    
-                                    # Marcar dados como processados
-                                    st.session_state.dados_processados = True
-                                    
-                                    st.success("✅ XMLs processados com sucesso!")
-                            else:
-                                st.error("❌ A coluna 'Tipo Nota' não foi gerada. Verifique a configuração e classificação.")
-                        except Exception as e:
-                            st.error(f"Erro ao processar dados: {e}")
-                else:
-                    st.warning("⚠️ Nenhum arquivo XML encontrado nos arquivos enviados.")
+                    executar_pipeline(xml_paths, cnpj_empresa)
 
 # Renderizar resultados se houver dados processados
 if st.session_state.dados_processados:
