@@ -51,7 +51,7 @@ def test_extrair_icms_e_chave(tmp_path):
     registros = extrair_dados_xml(str(xml_file))
     assert len(registros) == 1
     registro = registros[0]
-    assert registro["ICMS"] == 180.00
+    assert float(registro["ICMS Valor"]) == 180.00
     assert registro["CHAVE XML"] == "NFe12345678901234567890123456789012345678901234"
 
 

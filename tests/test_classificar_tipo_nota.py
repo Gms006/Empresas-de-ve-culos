@@ -9,15 +9,9 @@ from modules.estoque_veiculos import classificar_tipo_nota
 
 CNPJ = "41492247000150"
 
-@pytest.mark.parametrize("cfop,expected",[
-    ("1102","Entrada"),
-    ("2102","Entrada"),
-    ("5102","Saída"),
-    ("6102","Saída"),
-    ("9999","Indefinido"),
-])
-def test_cfop_aplicado_quando_ambos_sao_empresa(cfop, expected):
-    assert classificar_tipo_nota(CNPJ, CNPJ, CNPJ, cfop) == expected
+@pytest.mark.parametrize("cfop", ["1102", "2102", "5102", "6102", "9999"])
+def test_destinatario_prioritario_quando_ambos_sao_empresa(cfop):
+    assert classificar_tipo_nota(CNPJ, CNPJ, CNPJ, cfop) == "Entrada"
 
 
 def test_cnpj_regra_entrada():
@@ -25,8 +19,20 @@ def test_cnpj_regra_entrada():
 
 
 def test_cnpj_regra_saida():
-    assert classificar_tipo_nota(CNPJ, "123", CNPJ, "1102") == "Saída"
+    assert classificar_tipo_nota(CNPJ, "123", CNPJ, "5102") == "Saída"
+
+
+def test_emitente_indefinido_por_cfop():
+    assert classificar_tipo_nota(CNPJ, "123", CNPJ, "1102") == "Entrada"
+
+
+def test_alerta_emitida_pela_empresa():
+    tipo, alerta = classificar_tipo_nota(CNPJ, "123", CNPJ, "1102", retornar_alerta=True)
+    assert tipo == "Entrada"
+    assert alerta.startswith("Entrada emitida")
 
 
 def test_cnpj_regra_indefinido():
-    assert classificar_tipo_nota("123", "456", CNPJ, "1102") == "Indefinido"
+    tipo, alerta = classificar_tipo_nota("123", "456", CNPJ, "1102", retornar_alerta=True)
+    assert tipo == "Indefinido"
+    assert alerta.startswith("Nota não envolve")

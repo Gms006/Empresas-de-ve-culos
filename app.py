@@ -26,7 +26,11 @@ from modules.apuracao_fiscal import calcular_apuracao
 from utils.filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
 from utils.formatador_utils import formatar_moeda, formatar_percentual
 from utils.interface_utils import formatar_df_exibicao
-from utils.google_drive_utils import baixar_xmls_empresa
+from utils.google_drive_utils import (
+    criar_servico_drive,
+    baixar_xmls_empresa_zip,
+    ROOT_FOLDER_ID,
+)
 
 # Configuração da página
 st.set_page_config(
@@ -408,12 +412,18 @@ with upload_area:
         if st.button("📂 Buscar XMLs do Drive"):
             with st.spinner("Baixando arquivos do Google Drive..."):
                 with tempfile.TemporaryDirectory() as tmpdir:
-                    xml_paths, mensagens = baixar_xmls_empresa(
+                    pasta_principal_id = ROOT_FOLDER_ID
+
+                    service = criar_servico_drive()
+                    xml_paths = baixar_xmls_empresa_zip(
+                        service,
+                        pasta_principal_id,
                         empresa_selecionada_nome,
-                        dest_dir=tmpdir,
+                        tmpdir,
                     )
-                    for msg in mensagens:
-                        st.info(msg)
+                    st.success(
+                        f"XMLs baixados e extraídos: {len(xml_paths)} arquivos encontrados."
+                    )
                     executar_pipeline(xml_paths, cnpj_empresa)
     else:
         uploaded_files = st.file_uploader(

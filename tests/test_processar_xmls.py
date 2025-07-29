@@ -88,11 +88,18 @@ def test_processar_xmls_filters_columns(tmp_path):
         "Ano Modelo",
         "Ano Fabricação",
         "Cor",
+        "ICMS Alíquota",
+        "ICMS Valor",
+        "ICMS Base",
+        "CST ICMS",
+        "Redução BC",
+        "Modalidade BC",
         "Natureza Operação",
         "CHAVE XML",
         "Empresa CNPJ",
         "Tipo Produto",
         "Mês Emissão",
+        "Alerta Auditoria",
     ]
     assert list(df.columns) == expected_cols
 
