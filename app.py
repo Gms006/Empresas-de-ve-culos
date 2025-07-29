@@ -412,7 +412,11 @@ with upload_area:
         if st.button("📂 Buscar XMLs do Drive"):
             with st.spinner("Baixando arquivos do Google Drive..."):
                 with tempfile.TemporaryDirectory() as tmpdir:
-                    caminho_chave = os.getenv("GOOGLE_SERVICE_KEY", "./Chave_Veiculos.json")
+                    service_account_info = st.secrets["google_service_account"]
+                    with open("/tmp/service_account.json", "w") as f:
+                        json.dump(service_account_info, f)
+
+                    caminho_chave = "/tmp/service_account.json"
                     pasta_principal_id = ROOT_FOLDER_ID
 
                     service = criar_servico_drive(caminho_chave)
