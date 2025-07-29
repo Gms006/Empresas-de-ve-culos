@@ -1,6 +1,7 @@
 import os
 import io
 import logging
+import zipfile
 from typing import Dict, List, Tuple
 import json
 from google.oauth2 import service_account
@@ -210,48 +211,57 @@ def _scan_xmls(service, folder_id: str, prefix: str = "") -> List[Dict[str, str]
     return entries
 def baixar_xmls_empresa(
     company_name: str,
-    tipo: str,
     root_id: str = ROOT_FOLDER_ID,
     dest_dir: str | None = None,
 ) -> Tuple[List[str], List[str]]:
-    """Baixa XMLs de uma empresa no Google Drive.
+    """Baixa o ZIP de XMLs da empresa, extrai e retorna os caminhos."""
 
-    Retorna a lista de caminhos baixados e mensagens informativas.
-    """
     if dest_dir is None:
         dest_dir = os.getcwd()
 
     service = get_drive_service()
-    empresa_id = _find_subfolder(service, root_id, company_name)
     mensagens: List[str] = []
+
+    empresa_id = _find_subfolder(service, root_id, company_name)
     if not empresa_id:
-        mensagens.append(f'Empresa {company_name} não encontrada no Drive.')
+        mensagens.append(f"Empresa {company_name} não encontrada no Drive.")
         return [], mensagens
 
-    index = atualizar_index_empresa(service, empresa_id)
-    xml_paths: List[str] = []
+    compactadas_id = _find_subfolder(service, empresa_id, "NFs Compactadas")
+    if not compactadas_id:
+        mensagens.append("Subpasta 'NFs Compactadas' não encontrada.")
+        return [], mensagens
 
-    tipo_lower = tipo.lower()
-    for file_id, info in index.items():
-        tipo_nota = info.get("tipo", "").lower()
-        if tipo_lower not in ("entradas", "saidas", "saídas", "ambas"):
-            continue
-        if tipo_lower == "entradas" and not tipo_nota.startswith("entrada"):
-            continue
-        if tipo_lower in ("saidas", "saídas") and not tipo_nota.startswith("saída"):
-            continue
+    arquivos = _list_files(service, compactadas_id)
+    zips = [f for f in arquivos if f["name"].lower().endswith(".zip")]
+    if not zips:
+        mensagens.append("Nenhum arquivo ZIP localizado em 'NFs Compactadas'.")
+        return [], mensagens
 
-        request = service.files().get_media(fileId=file_id)
-        dest_path = os.path.join(dest_dir, info["path"]) if dest_dir else info["path"]
-        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-        fh = io.FileIO(dest_path, "wb")
+    zips.sort(key=lambda f: f.get("modifiedTime", ""), reverse=True)
+    zip_info = zips[0]
+    zip_path = os.path.join(dest_dir, zip_info["name"])
+
+    os.makedirs(dest_dir, exist_ok=True)
+    mensagens.append(f"Baixando {zip_info['name']} do Drive...")
+    request = service.files().get_media(fileId=zip_info["id"])
+    with io.FileIO(zip_path, "wb") as fh:
         downloader = MediaIoBaseDownload(fh, request)
         done = False
         while not done:
             _, done = downloader.next_chunk()
-        xml_paths.append(dest_path)
 
-    if not xml_paths:
-        mensagens.append("Nenhum XML encontrado para o tipo solicitado.")
+    mensagens.append("Extraindo XMLs...")
+    xml_paths: List[str] = []
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            for name in zf.namelist():
+                if name.lower().endswith(".xml"):
+                    zf.extract(name, dest_dir)
+                    xml_paths.append(os.path.join(dest_dir, name))
+    except Exception as exc:
+        mensagens.append(f"Erro ao extrair ZIP: {exc}")
+        return [], mensagens
 
+    mensagens.append(f"{len(xml_paths)} XMLs extraídos do ZIP.")
     return xml_paths, mensagens
