@@ -13,13 +13,28 @@ ROOT_FOLDER_ID = '1ADaMbXNPEX8ZIT7c1U_pWMsRygJFROZq'
 log = logging.getLogger(__name__)
 
 
-def get_drive_service() -> 'googleapiclient.discovery.Resource':
-    """Autentica e retorna o serviço do Google Drive usando variável de ambiente."""
-    service_account_info = json.loads(os.environ['GCP_SERVICE_ACCOUNT_JSON'])
+def get_drive_service() -> "googleapiclient.discovery.Resource":
+    """Retorna o serviço do Google Drive utilizando ``GCP_SERVICE_ACCOUNT_JSON``.
+
+    A variável de ambiente deve conter o JSON da chave de serviço. Erros de
+    ausência ou formatação incorreta são relatados explicitamente.
+    """
+    raw_json = os.getenv("GCP_SERVICE_ACCOUNT_JSON")
+    if not raw_json:
+        raise EnvironmentError(
+            "Variável GCP_SERVICE_ACCOUNT_JSON não definida"
+        )
+    try:
+        service_account_info = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "Conteúdo inválido em GCP_SERVICE_ACCOUNT_JSON"
+        ) from exc
+
     creds = service_account.Credentials.from_service_account_info(
         service_account_info, scopes=SCOPES
     )
-    return build('drive', 'v3', credentials=creds)
+    return build("drive", "v3", credentials=creds)
 
 
 def _find_subfolder(service, parent_id: str, name: str) -> str | None:
@@ -83,9 +98,14 @@ def _download_files(service, folder_id: str, dest_dir: str) -> List[str]:
     return xml_paths
 
 
-def baixar_xmls_empresa(company_name: str, tipo: str,
-                        root_id: str = ROOT_FOLDER_ID,
-                        dest_dir: str | None = None) -> Tuple[List[str], List[str]]:
+def baixar_xmls_empresa(
+    company_name: str,
+    tipo: str,
+    root_id: str = ROOT_FOLDER_ID,
+    dest_dir: str | None = None,
+    folder_entradas: str = "Entradas",
+    folder_saidas: str = "Saidas",
+) -> Tuple[List[str], List[str]]:
     """Baixa XMLs de uma empresa no Google Drive.
 
     Retorna a lista de caminhos baixados e mensagens informativas.
@@ -103,10 +123,10 @@ def baixar_xmls_empresa(company_name: str, tipo: str,
     xml_paths: List[str] = []
     tipos_map = []
     tipo_lower = tipo.lower()
-    if tipo_lower in ('entradas', 'ambas'):
-        tipos_map.append('Entradas')
-    if tipo_lower in ('saídas', 'saidas', 'ambas'):
-        tipos_map.append('Saidas')
+    if tipo_lower in ("entradas", "ambas"):
+        tipos_map.append(folder_entradas)
+    if tipo_lower in ("saídas", "saidas", "ambas"):
+        tipos_map.append(folder_saidas)
 
     for pasta in tipos_map:
         pasta_id = _find_subfolder(service, empresa_id, pasta)

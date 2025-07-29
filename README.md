@@ -8,11 +8,12 @@ Os XMLs podem ser importados automaticamente de uma pasta no Google Drive. Para 
 
 1. Salve o arquivo de chave do serviço Google no caminho `Chave_Veiculos.json`.
 2. Confirme que suas empresas e respectivos CNPJs estão definidos em `config/empresas_config.json`.
-3. Execute a aplicação com `streamlit run app.py` e selecione:
+3. Defina a variável de ambiente `GCP_SERVICE_ACCOUNT_JSON` com o conteúdo do JSON de serviço.
+4. Execute a aplicação com `streamlit run app.py` e selecione:
    - A empresa desejada
    - O tipo de nota (Entradas, Saídas ou Ambas)
    - A opção **Google Drive** como origem
-4. Clique em **"Buscar XMLs do Drive"** para iniciar o download e processamento.
+5. Clique em **"Buscar XMLs do Drive"** para iniciar o download e processamento.
 
 O ID da pasta principal do Drive é `1ADaMbXNPEX8ZIT7c1U_pWMsRygJFROZq`. Dentro dela cada empresa possui as subpastas `Entradas` e `Saidas` contendo os XMLs.
 
