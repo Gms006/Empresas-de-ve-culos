@@ -8,14 +8,14 @@
   },
   "eduardo": {
     "nome": "EDUARDO VEICULOS LTDA",
-    "cnpj_emitentes": ["34.919.927/0001-41", "34919927000141"],
+    "cnpj_emitentes": ["34.919.927/0001-41"],
     "nomes_proprios": [
       "EDUARDO VEICULOS LTDA"
     ]
   },
   "radial": {
     "nome": "RADIAL CONSIGNACOES LTDA",
-    "cnpj_emitentes": ["18.775.013/0001-06", "18775013000106"],
+    "cnpj_emitentes": ["18.775.013/0001-06"],
     "nomes_proprios": [
       "RADIAL CONSIGNACOES LTDA"
     ]

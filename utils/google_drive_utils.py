@@ -37,19 +37,38 @@ def _find_subfolder(service, parent_id: str, name: str) -> str | None:
 
 
 def _list_files(service, folder_id: str) -> List[dict]:
-    """Lista arquivos dentro da pasta informada."""
+    """Lista todos os arquivos dentro da pasta informada."""
     query = f"'{folder_id}' in parents and trashed=false"
-    results = service.files().list(q=query, fields='files(id, name, mimeType)').execute()
-    return results.get('files', [])
+    files: List[dict] = []
+    page_token = None
+    while True:
+        results = (
+            service.files()
+            .list(
+                q=query,
+                fields="nextPageToken, files(id, name, mimeType)",
+                pageToken=page_token,
+                pageSize=1000,
+            )
+            .execute()
+        )
+        files.extend(results.get("files", []))
+        page_token = results.get("nextPageToken")
+        if not page_token:
+            break
+    return files
 
 
 def _download_files(service, folder_id: str, dest_dir: str) -> List[str]:
-    """Baixa todos os arquivos XML da pasta para ``dest_dir``."""
+    """Baixa recursivamente todos os arquivos XML da pasta para ``dest_dir``."""
     os.makedirs(dest_dir, exist_ok=True)
     files = _list_files(service, folder_id)
     xml_paths: List[str] = []
     for f in files:
         if f['mimeType'] == 'application/vnd.google-apps.folder':
+            # Descer em subpastas (ex: Entradas/2025/05-2025)
+            sub_dir = os.path.join(dest_dir, f['name'])
+            xml_paths.extend(_download_files(service, f['id'], sub_dir))
             continue
         if not f['name'].lower().endswith('.xml'):
             continue
