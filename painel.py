@@ -91,6 +91,7 @@ def main():
     _init_session()
 
     LOGO = Path("config/logo.png")
+
     st.markdown(
         """
         <style>
@@ -182,6 +183,7 @@ def main():
             """,
             unsafe_allow_html=True,
         )
+
     if not st.session_state.processado:
         st.warning("Nenhum dado carregado. Importe os XMLs para visualizar o painel.")
         return
@@ -238,8 +240,16 @@ def main():
             f"<div class='alert-card'><div class='alert-title'>Alertas Fiscais</div><div class='alert-badge'>{num_alertas}</div></div>",
             unsafe_allow_html=True,
         )
-        alertas_tab = st.session_state.df_alertas[["Estoque Parado", "DDV"]] if not st.session_state.df_alertas.empty else pd.DataFrame(columns=["Estoque Parado","DDV"])
-        st.table(alertas_tab.style.set_table_attributes('class="styled-table"'))
+        if not st.session_state.df_alertas.empty:
+            cols_desejadas = ["Estoque Parado", "DDV"]
+            cols_existentes = [c for c in cols_desejadas if c in st.session_state.df_alertas.columns]
+            if cols_existentes:
+                alertas_tab = st.session_state.df_alertas[cols_existentes]
+            else:
+                alertas_tab = st.session_state.df_alertas
+            st.table(alertas_tab.style.set_table_attributes('class="styled-table"'))
+        else:
+            st.write("Nenhum alerta fiscal encontrado.")
 
 
 if __name__ == "__main__":
