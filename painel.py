@@ -241,13 +241,14 @@ def main():
             unsafe_allow_html=True,
         )
         if not st.session_state.df_alertas.empty:
-            cols_desejadas = ["Estoque Parado", "DDV"]
-            cols_existentes = [c for c in cols_desejadas if c in st.session_state.df_alertas.columns]
-            if cols_existentes:
-                alertas_tab = st.session_state.df_alertas[cols_existentes]
-            else:
-                alertas_tab = st.session_state.df_alertas
-            st.table(alertas_tab.style.set_table_attributes('class="styled-table"'))
+            desired = ["Estoque Parado", "DDV"]
+            existing = [c for c in desired if c in st.session_state.df_alertas.columns]
+            tabela = (
+                st.session_state.df_alertas[existing]
+                if existing
+                else st.session_state.df_alertas
+            )
+            st.table(tabela.style.set_table_attributes('class="styled-table"'))
         else:
             st.write("Nenhum alerta fiscal encontrado.")
 
