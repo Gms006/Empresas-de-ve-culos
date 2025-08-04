@@ -115,7 +115,6 @@ def _exportar_excel(df: pd.DataFrame) -> bytes:
             df.to_excel(writer, index=False)
         return buffer.getvalue()
 
-
 def mostrar_grid_selecionavel(
     df: pd.DataFrame, key: str, selection_mode: str = "single"
 ):
@@ -417,7 +416,6 @@ def main():
                 )
         else:
             st.write("Nenhum alerta fiscal encontrado.")
-
     elif page == "Estoque Fiscal":
         st.markdown("## Estoque Fiscal")
         estoque = df_filtrado.copy()
