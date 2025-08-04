@@ -5,6 +5,7 @@ import xml.etree.ElementTree as ET
 import json
 import re
 import logging
+import streamlit as st
 from modules.configurador_planilha import configurar_planilha
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union, Tuple
@@ -313,11 +314,29 @@ def normalizar_cnpj(cnpj: Optional[str]) -> Optional[str]:
         return None
     return re.sub(r'\D', '', str(cnpj))
 
+
+def safe_parse_xml(xml_path):
+    if not os.path.exists(xml_path):
+        logging.warning(f"XML não encontrado, pulando: {xml_path}")
+        return None, f"Não encontrado: {xml_path}"
+    try:
+        tree = ET.parse(xml_path)
+        return tree, None
+    except ET.ParseError as e:
+        logging.error(f"Erro de parse em {xml_path}: {e}")
+        return None, f"ParseError: {xml_path} -> {e}"
+    except Exception as e:
+        logging.error(f"Erro inesperado ao processar {xml_path}: {e}")
+        return None, f"Outro erro: {xml_path} -> {e}"
+
 def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
     """Extrai dados de um arquivo XML de NFe."""
+    tree, err = safe_parse_xml(xml_path)
+    if err:
+        st.session_state.setdefault("erros_xml", []).append(err)
+        return []
     try:
         log.info(f"Processando XML: {xml_path}")
-        tree = ET.parse(xml_path)
         root = tree.getroot()
         
         # Detectar namespace automaticamente
@@ -530,9 +549,6 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
         log.info(f"Total de {len(registros)} registros extraídos do XML")
         return registros
 
-    except ET.ParseError as e:
-        log.error(f"Erro ao fazer parse do XML {xml_path}: {e}")
-        return []
     except Exception as e:
         log.error(f"Erro ao processar {xml_path}: {e}")
         import traceback
