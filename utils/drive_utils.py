@@ -105,17 +105,18 @@ def baixar_xmls_empresa_zip(
             f"Pasta da empresa '{nome_empresa}' não encontrada no Drive"
         )
 
+    os.makedirs(destino, exist_ok=True)
+
     arquivos = listar_arquivos(service, empresa_id)
-    alvo = next(
+    zip_info = next(
         (a for a in arquivos if a["name"].lower() == "xmls_atualizados.zip"),
         None,
     )
-    if not alvo:
+    if not zip_info:
         return []
 
-    os.makedirs(destino, exist_ok=True)
-    zip_path = os.path.join(destino, alvo["name"])
-    baixar_arquivo(service, alvo["id"], zip_path)
+    zip_path = os.path.join(destino, zip_info["name"])
+    baixar_arquivo(service, zip_info["id"], zip_path)
 
     import zipfile
 
