@@ -78,8 +78,8 @@ def _upload_manual(files) -> list[str]:
                 with zipfile.ZipFile(dest, "r") as zf:
                     for name in zf.namelist():
                         if name.lower().endswith(".xml"):
-                            extracted = upload_dir / name
-                            extracted.parent.mkdir(parents=True, exist_ok=True)
+                            base = Path(name).name
+                            extracted = upload_dir / base
                             with open(extracted, "wb") as out_f:
                                 out_f.write(zf.read(name))
                             paths.append(str(extracted))

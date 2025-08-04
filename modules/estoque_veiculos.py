@@ -689,17 +689,17 @@ def processar_diretorio(
     cnpj_empresa: Union[str, List[str]],
     extensao: str = ".xml",
 ) -> pd.DataFrame:
-    """Processa todos os arquivos XML em ``diretorio`` de forma recursiva."""
+    """Processa todos os arquivos XML em ``diretorio`` sem percorrer subpastas."""
     if not os.path.isdir(diretorio):
         log.error(f"Diretório não encontrado: {diretorio}")
         return pd.DataFrame()
 
-    xml_paths: List[str] = []
-    for root, _, files in os.walk(diretorio):
-        for f in files:
-            if f.lower().endswith(extensao.lower()):
-                xml_paths.append(os.path.join(root, f))
-    
+    xml_paths: List[str] = [
+        os.path.join(diretorio, f)
+        for f in os.listdir(diretorio)
+        if f.lower().endswith(extensao.lower())
+    ]
+
     if not xml_paths:
         log.warning(
             f"Nenhum arquivo {extensao} encontrado no diretório {diretorio}"
@@ -840,10 +840,11 @@ if __name__ == "__main__":
     if args.xml:
         xml_paths = args.xml
     elif args.dir:
-        for root, _, files in os.walk(args.dir):
-            for f in files:
-                if f.lower().endswith('.xml'):
-                    xml_paths.append(os.path.join(root, f))
+        xml_paths = [
+            os.path.join(args.dir, f)
+            for f in os.listdir(args.dir)
+            if f.lower().endswith('.xml')
+        ]
     
     if not xml_paths:
         log.error("Nenhum arquivo XML especificado. Use --dir ou --xml")
