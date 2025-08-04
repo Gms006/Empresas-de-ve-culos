@@ -76,15 +76,13 @@ def _list_files(service, folder_id: str) -> List[dict]:
 
 
 def _download_files(service, folder_id: str, dest_dir: str) -> List[str]:
-    """Baixa recursivamente todos os arquivos XML da pasta para ``dest_dir``."""
+    """Baixa todos os arquivos XML da pasta para ``dest_dir`` (sem subpastas)."""
     os.makedirs(dest_dir, exist_ok=True)
     files = _list_files(service, folder_id)
     xml_paths: List[str] = []
     for f in files:
-        if f['mimeType'] == 'application/vnd.google-apps.folder':
-            # Descer em subpastas (ex: Entradas/2025/05-2025)
-            sub_dir = os.path.join(dest_dir, f['name'])
-            xml_paths.extend(_download_files(service, f['id'], sub_dir))
+        if f.get('mimeType') == 'application/vnd.google-apps.folder':
+            # Ignorar quaisquer pastas; XMLs devem estar diretamente na pasta raiz
             continue
         if not f['name'].lower().endswith('.xml'):
             continue

@@ -123,6 +123,9 @@ def baixar_xmls_empresa_zip(
     with zipfile.ZipFile(zip_path, "r") as zf:
         for name in zf.namelist():
             if name.lower().endswith(".xml"):
-                zf.extract(name, destino)
-                xmls.append(os.path.join(destino, name))
+                base = os.path.basename(name)
+                caminho = os.path.join(destino, base)
+                with zf.open(name) as src, open(caminho, "wb") as out:
+                    out.write(src.read())
+                xmls.append(caminho)
     return xmls
