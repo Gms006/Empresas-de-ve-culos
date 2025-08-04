@@ -91,26 +91,13 @@ def baixar_arquivo(service, file_id: str, destino: str) -> None:
                 break
 
 
-def baixar_xmls_da_pasta(service, pasta_id: str, destino: str) -> List[str]:
-    """Baixa todos os arquivos XML de ``pasta_id`` para ``destino``."""
-
-    arquivos = listar_arquivos(service, pasta_id)
-    caminhos = []
-    for arquivo in arquivos:
-        if arquivo["name"].lower().endswith(".xml"):
-            caminho_destino = os.path.join(destino, arquivo["name"])
-            baixar_arquivo(service, arquivo["id"], caminho_destino)
-            caminhos.append(caminho_destino)
-    return caminhos
-
-
 def baixar_xmls_empresa_zip(
     service,
     pasta_principal_id: str,
     nome_empresa: str,
     destino: str,
 ) -> List[str]:
-    """Baixa o ZIP mais recente da empresa e extrai todos os XMLs."""
+    """Baixa o arquivo ``*.zip`` da pasta da empresa e retorna os XMLs extraídos."""
 
     empresa_id = _buscar_subpasta_id(service, pasta_principal_id, nome_empresa)
     if not empresa_id:
@@ -118,27 +105,20 @@ def baixar_xmls_empresa_zip(
             f"Pasta da empresa '{nome_empresa}' não encontrada no Drive"
         )
 
-    compactadas_id = _buscar_subpasta_id(service, empresa_id, "NFs Compactadas")
-    if not compactadas_id:
+    arquivos = listar_arquivos(service, empresa_id)
+    alvo = next((a for a in arquivos if a["name"].lower().endswith(".zip")), None)
+    if not alvo:
         return []
 
-    arquivos = listar_arquivos(service, compactadas_id)
-    zips = [a for a in arquivos if a["name"].lower().endswith(".zip")]
-    if not zips:
-        return []
+    os.makedirs(destino, exist_ok=True)
+    zip_path = os.path.join(destino, "empresa.zip")
+    baixar_arquivo(service, alvo["id"], zip_path)
 
-    zips.sort(key=lambda a: a.get("modifiedTime", ""), reverse=True)
-    info_zip = zips[0]
-    zip_path = os.path.join(destino, info_zip["name"])
-
-    baixar_arquivo(service, info_zip["id"], zip_path)
-
-    import zipfile
-
-    xmls: List[str] = []
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        for name in zf.namelist():
-            if name.lower().endswith(".xml"):
-                zf.extract(name, destino)
-                xmls.append(os.path.join(destino, name))
+    xmls = [
+        os.path.join(destino, f)
+        for f in os.listdir(destino)
+        if f.lower().endswith(".xml")
+    ]
+    if not xmls:
+        raise RuntimeError(f"Nenhum XML encontrado em {destino}")
     return xmls
