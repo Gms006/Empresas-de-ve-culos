@@ -1,10 +1,22 @@
-import streamlit as st
-import pandas as pd
+"""Painel principal da aplicação Streamlit.
+
+Este módulo concentra a interface do dashboard e o fluxo de carregamento
+dos dados. Antes as ações de navegação e de processamento eram construídas
+com HTML estático, o que impedia callbacks e travava a página. A nova
+versão utiliza apenas componentes nativos do Streamlit e controla o estado
+por ``st.session_state``.
+"""
+
+import io
 import json
 import os
-import zipfile
 import tempfile
+import zipfile
 from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, GridUpdateMode
 
 from modules.estoque_veiculos import processar_xmls
 from modules.configurador_planilha import configurar_planilha
@@ -17,17 +29,25 @@ from modules.transformadores_veiculos import (
 from utils.google_drive_utils import criar_servico_drive, baixar_xmls_empresa_zip, ROOT_FOLDER_ID
 from utils.filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
 from utils.formatador_utils import formatar_moeda
-from utils.interface_utils import formatar_df_exibicao
 
 
-def _init_session():
-    if "processado" not in st.session_state:
-        st.session_state.processado = False
-        st.session_state.df_configurado = pd.DataFrame()
-        st.session_state.df_estoque = pd.DataFrame()
-        st.session_state.df_alertas = pd.DataFrame()
-        st.session_state.df_resumo = pd.DataFrame()
-        st.session_state.kpis = {}
+def _init_session() -> None:
+    """Inicializa chaves do ``st.session_state`` com valores seguros."""
+    defaults = {
+        "processado": False,
+        "df_configurado": pd.DataFrame(),
+        "df_estoque": pd.DataFrame(),
+        "df_alertas": pd.DataFrame(),
+        "df_resumo": pd.DataFrame(),
+        "kpis": {},
+        "page": "Relatórios",
+        "xml_paths": [],
+        "cnpj_empresa": "",
+        "filtro_ano": None,
+        "filtro_mes": None,
+    }
+    for chave, valor in defaults.items():
+        st.session_state.setdefault(chave, valor)
 
 
 def _carregar_empresas():
@@ -44,8 +64,10 @@ def _processar_arquivos(xml_paths, cnpj_empresa):
 
 
 def _executar_pipeline(xml_paths, cnpj_empresa):
+    """Executa todas as etapas de transformação dos dados."""
     df_config = _processar_arquivos(xml_paths, cnpj_empresa)
     if df_config.empty:
+        st.session_state.processado = False
         st.warning("Nenhum dado processado.")
         return
 
@@ -86,106 +108,227 @@ def _upload_manual(files):
         return paths
 
 
+def _exportar_excel(df: pd.DataFrame) -> bytes:
+    """Gera um arquivo Excel em memória a partir do DataFrame informado."""
+    with io.BytesIO() as buffer:
+        with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+            df.to_excel(writer, index=False)
+        return buffer.getvalue()
+
+
+def mostrar_grid_selecionavel(
+    df: pd.DataFrame, key: str, selection_mode: str = "single"
+):
+    """Exibe ``df`` em um grid interativo permitindo seleção de linhas."""
+    if df is None or df.empty:
+        st.write("Nenhum dado para exibir.")
+        return None
+
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_pagination(paginationAutoPageSize=True)
+    gb.configure_side_bar()
+    gb.configure_selection(selection_mode, use_checkbox=True)
+    gb.configure_default_column(resizable=True, sortable=True, filter=True)
+    grid_options = gb.build()
+
+    grid_response = AgGrid(
+        df,
+        gridOptions=grid_options,
+        data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+        update_mode=GridUpdateMode.MODEL_CHANGED,
+        fit_columns_on_grid_load=True,
+        enable_enterprise_modules=False,
+        theme="dark",
+        key=key,
+        allow_unsafe_jscode=True,
+    )
+    return grid_response
+
+
+def apurar_tributos_por_venda(df_vendas: pd.DataFrame) -> pd.DataFrame:
+    """Aplica alíquotas básicas de tributos sobre o valor de venda."""
+    df = df_vendas.copy()
+    valor = pd.to_numeric(df.get("Valor Total"), errors="coerce").fillna(0.0)
+    df["Valor Total"] = valor
+    df["ICMS"] = valor * 0.18
+    df["PIS"] = valor * 0.0165
+    df["COFINS"] = valor * 0.076
+    df["Tributos Totais"] = df[["ICMS", "PIS", "COFINS"]].sum(axis=1)
+    return df
+
+
+def montar_relatorio_vendas_compras(st_session) -> pd.DataFrame:
+    """Relaciona vendas com compras repetidas por chassi."""
+    df_config = st_session.df_configurado
+    vendas = df_config[df_config["Tipo Nota"] == "Saída"].copy()
+    entradas = df_config[df_config["Tipo Nota"] == "Entrada"].copy()
+
+    vendas = aplicar_filtro_periodo(
+        vendas, "Data Emissão", st_session.get("filtro_ano"), st_session.get("filtro_mes")
+    )
+    entradas = aplicar_filtro_periodo(
+        entradas, "Data Emissão", st_session.get("filtro_ano"), st_session.get("filtro_mes")
+    )
+
+    for df in (vendas, entradas):
+        if "Chassi" in df.columns:
+            df["Chassi_norm"] = (
+                df["Chassi"].astype(str).str.replace(r"\W", "", regex=True).str.upper()
+            )
+        else:
+            df["Chassi_norm"] = ""
+
+    compras_agrupadas = (
+        entradas.groupby("Chassi_norm")
+        .agg(
+            vezes_comprado=("Chassi_norm", "count"),
+            valor_medio_compra=("Valor Total", "mean"),
+            total_compra=("Valor Total", "sum"),
+        )
+        .reset_index()
+        .rename(columns={"Chassi_norm": "Chassi"})
+    )
+
+    vendas_tributos = apurar_tributos_por_venda(vendas)
+    vendas_tributos = vendas_tributos.rename(
+        columns={"Chassi_norm": "Chassi", "Valor Total": "Valor Venda"}
+    )
+
+    rel = vendas_tributos.merge(compras_agrupadas, on="Chassi", how="left")
+    rel["Lucro Líquido Estimado"] = (
+        rel["Valor Venda"]
+        - rel.get("total_compra", 0).fillna(0)
+        - rel.get("Tributos Totais", 0).fillna(0)
+    )
+    return rel
+
+
+def render_topbar(logo: Path) -> None:
+    """Renderiza a barra superior com navegação e ações rápidas."""
+    cols = st.columns([1, 6, 4])
+    with cols[0]:
+        if logo.exists():
+            st.image(str(logo), width=50)
+        else:
+            st.markdown("**NETO CONTABILIDADE**")
+    with cols[1]:
+        st.markdown(
+            "<h1 style='margin:0;'>NETO <span style='color:#d1d5db;'>CONTABILIDADE</span></h1>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<div style='font-size:12px;color:#d1d5db;'>VILECRDE</div>",
+            unsafe_allow_html=True,
+        )
+    with cols[2]:
+        paginas = ["Relatórios", "Mapa de Vendas", "Estoque Fiscal"]
+        current = st.session_state.get("page", "Relatórios")
+        idx = paginas.index(current) if current in paginas else 0
+        pagina = st.radio(
+            "Navegação",
+            paginas,
+            horizontal=True,
+            index=idx,
+            label_visibility="collapsed",
+        )
+        st.session_state.page = pagina
+
+        if st.button("☰", key="hamburger"):
+            with st.expander("Ações rápidas", expanded=True):
+                if st.button("Reprocessar XMLs"):
+                    st.session_state.processado = False
+                    st.experimental_rerun()
+                st.write("Filtros adicionais podem ir aqui")
+
+
 def main():
     st.set_page_config(page_title="Dashboard Neto Contabilidade", layout="wide")
     _init_session()
 
     LOGO = Path("config/logo.png")
 
-    st.markdown(
-        """
-        <style>
-            body {background-color:#233143; color:#ffffff; font-family:Montserrat, Arial, sans-serif;}
-            .top-bar {background-color:#1a2536; padding:10px 25px; display:flex; align-items:center; justify-content:space-between;}
-            .top-title{display:flex; flex-direction:column; margin-left:15px;}
-            .top-title h1{margin:0; font-size:32px; font-weight:700;}
-            .top-title span.neto{color:#ffffff;}
-            .top-title span.contab{color:#d1d5db;}
-            .sub-title{font-size:14px; color:#d1d5db; margin-top:-4px;}
-            .nav-menu{display:flex; align-items:center; gap:20px;}
-            .nav-menu a{color:#ffffff; text-decoration:none; font-size:16px;}
-            .nav-menu button{background-color:#1f2937; border:none; padding:6px 15px; border-radius:5px; color:#ffffff; cursor:pointer;}
-            .nav-menu button:hover{background-color:#374151;}
-            .hamburger{width:22px; height:2px; background:#ffffff; position:relative;}
-            .hamburger:before,.hamburger:after{content:""; position:absolute; left:0; width:22px; height:2px; background:#ffffff;}
-            .hamburger:before{top:-6px;} .hamburger:after{top:6px;}
-            .kpi-card{background-color:#1a2536; border-radius:8px; padding:20px; box-shadow:0 2px 4px rgba(0,0,0,0.3); color:#f1f1f1; text-align:center;}
-            .kpi-title{font-size:16px; color:#d1d5db;}
-            .kpi-value{font-size:28px; color:#ffd700; margin-top:5px;}
-            .sidebar-title{color:#ffd700; font-size:20px; margin-bottom:10px;}
-            .styled-table tbody tr:nth-child(even){background-color:#2f4159;}
-            .styled-table tbody tr:nth-child(odd){background-color:#233143;}
-            .alert-card{background-color:#1a2536; border-radius:8px; padding:20px; text-align:center; color:#f1f1f1;}
-            .alert-title{font-size:16px; color:#d1d5db; margin-bottom:10px;}
-            .alert-badge{display:inline-block; width:60px; height:60px; line-height:60px; border-radius:50%; background-color:#ffd700; color:#1a2536; font-size:24px; font-weight:bold;}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
     empresas = _carregar_empresas()
     nomes_empresas = [v["nome"] for v in empresas.values()]
 
     with st.sidebar:
-        st.image(LOGO, width=100)
+        if LOGO.exists():
+            st.image(str(LOGO), width=100)
         empresa_nome = st.selectbox("Empresa", [""] + nomes_empresas)
-        if not empresa_nome:
-            st.info("Selecione a empresa para iniciar")
-            return
-        chave = next(k for k, v in empresas.items() if v["nome"] == empresa_nome)
-        cnpj_empresa = empresas[chave]["cnpj_emitentes"][0]
-        st.markdown(f"**CNPJ:** {cnpj_empresa}")
+        if empresa_nome:
+            chave = next(k for k, v in empresas.items() if v["nome"] == empresa_nome)
+            st.session_state.cnpj_empresa = empresas[chave]["cnpj_emitentes"][0]
+            st.markdown(f"**CNPJ:** {st.session_state.cnpj_empresa}")
 
-        modo = st.radio("Fonte dos XMLs", ["Google Drive", "Upload Manual"])
-        if modo == "Google Drive":
-            if st.button("Buscar XMLs do Drive"):
-                with st.spinner("Baixando XMLs do Drive..."):
-                    service = criar_servico_drive()
-                    with tempfile.TemporaryDirectory() as tmpdir:
-                        xmls = baixar_xmls_empresa_zip(service, ROOT_FOLDER_ID, empresa_nome, tmpdir)
-                        _executar_pipeline(xmls, cnpj_empresa)
+            modo = st.radio("Fonte dos XMLs", ["Google Drive", "Upload Manual"])
+            if modo == "Google Drive":
+                if st.button("Baixar XMLs do Drive"):
+                    with st.spinner("Baixando XMLs do Drive..."):
+                        service = criar_servico_drive()
+                        with tempfile.TemporaryDirectory() as tmpdir:
+                            xmls = baixar_xmls_empresa_zip(
+                                service, ROOT_FOLDER_ID, empresa_nome, tmpdir
+                            )
+                    st.session_state.xml_paths = xmls
+                    st.session_state.processado = False
+                    st.success(f"{len(xmls)} arquivos obtidos.")
+            else:
+                uploaded = st.file_uploader(
+                    "Envie XML ou ZIP", type=["xml", "zip"], accept_multiple_files=True
+                )
+                if uploaded and st.button("Carregar arquivos"):
+                    paths = _upload_manual(uploaded)
+                    st.session_state.xml_paths = paths
+                    st.session_state.processado = False
+                    st.success(f"{len(paths)} arquivos carregados.")
+
+            if st.session_state.processado and not st.session_state.df_estoque.empty:
+                anos, meses = obter_anos_meses_unicos(
+                    st.session_state.df_estoque, "Data Base"
+                )
+                st.session_state.filtro_ano = st.selectbox("Ano", anos)
+                st.session_state.filtro_mes = st.selectbox(
+                    "Mês",
+                    meses,
+                    format_func=lambda m: [
+                        "Jan",
+                        "Fev",
+                        "Mar",
+                        "Abr",
+                        "Mai",
+                        "Jun",
+                        "Jul",
+                        "Ago",
+                        "Set",
+                        "Out",
+                        "Nov",
+                        "Dez",
+                    ][m - 1],
+                )
         else:
-            uploaded = st.file_uploader("Envie XML ou ZIP", type=["xml", "zip"], accept_multiple_files=True)
-            if uploaded:
-                paths = _upload_manual(uploaded)
-                _executar_pipeline(paths, cnpj_empresa)
+            st.info("Selecione a empresa para iniciar")
 
-        if st.session_state.processado:
-            anos, meses = obter_anos_meses_unicos(st.session_state.df_estoque, "Data Base")
-            ano = st.selectbox("Ano", anos)
-            mes = st.selectbox("Mês", meses, format_func=lambda m: ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"][m-1])
-            st.session_state.filtro_ano = ano
-            st.session_state.filtro_mes = mes
+    render_topbar(LOGO)
 
-    # Top bar
-    with st.container():
-        st.markdown(
-            """
-            <div class='top-bar'>
-                <div style='display:flex;align-items:center;'>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.image(LOGO, width=60)
-        st.markdown(
-            """
-                <div class='top-title'>
-                    <h1><span class='neto'>NETO</span> <span class='contab'>CONTABILIDADE</span></h1>
-                    <div class='sub-title'>VILECRDE</div>
-                </div>
-            </div>
-            <div class='nav-menu'>
-                <a href='#'>MAPA DE VENDAS</a>
-                <button>Relatórios</button>
-                <div class='hamburger'></div>
-            </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    if not empresa_nome:
+        st.stop()
 
     if not st.session_state.processado:
-        st.warning("Nenhum dado carregado. Importe os XMLs para visualizar o painel.")
+        st.info("Nenhum dado processado.")
+        if st.session_state.xml_paths:
+            if st.button("Carregar / Reprocessar XMLs"):
+                with st.spinner("Processando XMLs..."):
+                    _executar_pipeline(
+                        st.session_state.xml_paths, st.session_state.cnpj_empresa
+                    )
+                if st.session_state.processado:
+                    st.success("Dados carregados com sucesso.")
+        else:
+            st.warning("Carregue os arquivos na barra lateral.")
+        return
+
+    # Navegação entre páginas
+    if st.session_state.page == "Mapa de Vendas":
+        st.write("Mapa de Vendas em construção.")
         return
 
     df_filtrado = aplicar_filtro_periodo(
@@ -194,63 +337,122 @@ def main():
         st.session_state.get("filtro_ano"),
         st.session_state.get("filtro_mes"),
     )
+
+    if df_filtrado.empty:
+        st.warning("Não há dados para o período selecionado.")
+        return
+
     kpis = gerar_kpis(df_filtrado)
 
     c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown(
-            f"<div class='kpi-card'><div class='kpi-title'>Total Vendido</div><div class='kpi-value'>{formatar_moeda(kpis['Total Vendido (R$)'])}</div></div>",
-            unsafe_allow_html=True,
-        )
-    with c2:
-        st.markdown(
-            f"<div class='kpi-card'><div class='kpi-title'>Lucro Total</div><div class='kpi-value'>{formatar_moeda(kpis['Lucro Total (R$)'])}</div></div>",
-            unsafe_allow_html=True,
-        )
-    with c3:
-        st.markdown(
-            f"<div class='kpi-card'><div class='kpi-title'>Estoque Atual (R$)</div><div class='kpi-value'>{formatar_moeda(kpis['Estoque Atual (R$)'])}</div></div>",
-            unsafe_allow_html=True,
-        )
+    c1.metric("Total Vendido", formatar_moeda(kpis.get("Total Vendido (R$)", 0)))
+    c2.metric("Lucro Total", formatar_moeda(kpis.get("Lucro Total (R$)", 0)))
+    c3.metric("Estoque Atual (R$)", formatar_moeda(kpis.get("Estoque Atual (R$)", 0)))
 
-    vendas = st.session_state.df_configurado[st.session_state.df_configurado["Tipo Nota"] == "Saída"].copy()
-    vendas = aplicar_filtro_periodo(vendas, "Data Emissão", st.session_state.get("filtro_ano"), st.session_state.get("filtro_mes"))
-    vendas_tab = vendas[["Produto", "Valor Total"]].rename(columns={"Valor Total": "Valor (R$)"})
+    page = st.session_state.page
 
-    estoque_parado = df_filtrado[df_filtrado["Situação"] == "Em Estoque"].copy()
-    if "Data Emissão_entrada" in estoque_parado.columns:
-        estoque_parado["Estoque (dias)"] = (
-            pd.Timestamp.today() - pd.to_datetime(estoque_parado["Data Emissão_entrada"], errors="coerce")
-        ).dt.days
-    estoque_tab = estoque_parado[["Chassi_entrada", "Estoque (dias)"]].rename(columns={"Chassi_entrada": "Estoque"})
+    if page == "Relatórios":
+        # Produtos vendidos
+        st.markdown("### Produtos Vendidos")
+        vendas = st.session_state.df_configurado[
+            st.session_state.df_configurado["Tipo Nota"] == "Saída"
+        ].copy()
+        vendas = aplicar_filtro_periodo(
+            vendas,
+            "Data Emissão",
+            st.session_state.get("filtro_ano"),
+            st.session_state.get("filtro_mes"),
+        )
+        vendas_tab = vendas[["Produto", "Valor Total"]].rename(
+            columns={"Valor Total": "Valor (R$)"}
+        )
+        grid_vendas = mostrar_grid_selecionavel(vendas_tab, key="grid_vendas")
+        if grid_vendas:
+            st.download_button(
+                "Exportar Vendas",
+                data=_exportar_excel(vendas_tab),
+                file_name="vendas_detalhado.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
 
-    c_left, c_right = st.columns([2, 1])
-    with c_left:
-        t1, t2 = st.columns(2)
-        with t1:
-            st.markdown("### Produtos Vendidos")
-            st.table(vendas_tab.style.set_table_attributes('class="styled-table"'))
-        with t2:
-            st.markdown("### Estoque Parado")
-            st.table(estoque_tab.style.set_table_attributes('class="styled-table"'))
-    with c_right:
+        # Estoque parado
+        st.markdown("### Estoque Parado")
+        estoque_parado = df_filtrado[df_filtrado["Situação"] == "Em Estoque"].copy()
+        if "Data Emissão_entrada" in estoque_parado.columns and not estoque_parado.empty:
+            estoque_parado["Estoque (dias)"] = (
+                pd.Timestamp.today()
+                - pd.to_datetime(estoque_parado["Data Emissão_entrada"], errors="coerce")
+            ).dt.days
+        estoque_exibir = estoque_parado[
+            ["Chave", "Valor Entrada", "Estoque (dias)", "Situação"]
+        ].rename(
+            columns={"Chave": "Chassi/Chave", "Valor Entrada": "Valor Contábil (R$)"}
+        )
+        grid_estoque = mostrar_grid_selecionavel(estoque_exibir, key="grid_estoque")
+        if grid_estoque:
+            st.download_button(
+                "Exportar Estoque Fiscal",
+                data=_exportar_excel(estoque_exibir),
+                file_name="estoque_fiscal.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+        # Alertas fiscais
         st.markdown("### Alertas Fiscais")
-        num_alertas = len(st.session_state.df_alertas)
-        st.markdown(
-            f"<div class='alert-card'><div class='alert-title'>Alertas Fiscais</div><div class='alert-badge'>{num_alertas}</div></div>",
-            unsafe_allow_html=True,
-        )
         if not st.session_state.df_alertas.empty:
             desired = ["Estoque Parado", "DDV"]
             existing = [c for c in desired if c in st.session_state.df_alertas.columns]
-            tabela = (
+            tabela_alertas = (
                 st.session_state.df_alertas[existing]
                 if existing
                 else st.session_state.df_alertas
             )
-            st.table(tabela.style.set_table_attributes('class="styled-table"'))
+            grid_alertas = mostrar_grid_selecionavel(tabela_alertas, key="grid_alertas")
+            if grid_alertas:
+                st.download_button(
+                    "Exportar Alertas Fiscais",
+                    data=_exportar_excel(tabela_alertas),
+                    file_name="alertas_fiscais.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
         else:
             st.write("Nenhum alerta fiscal encontrado.")
+
+    elif page == "Estoque Fiscal":
+        st.markdown("## Estoque Fiscal")
+        estoque = df_filtrado.copy()
+        if "Data Emissão_entrada" in estoque.columns:
+            estoque["Dias em Estoque"] = (
+                pd.to_datetime(estoque["Data Saída"], errors="coerce").fillna(pd.Timestamp.today())
+                - pd.to_datetime(estoque["Data Emissão_entrada"], errors="coerce")
+            ).dt.days
+        estoque["Situação"] = estoque["Situação"].fillna("Desconhecido")
+        cols_exibir = [
+            c
+            for c in [
+                "Chassi_entrada",
+                "Valor Entrada",
+                "Situação",
+                "Data Emissão_entrada",
+                "Data Saída",
+                "Dias em Estoque",
+            ]
+            if c in estoque.columns
+        ]
+        display = estoque[cols_exibir].rename(
+            columns={
+                "Chassi_entrada": "Chassi",
+                "Valor Entrada": "Valor Contábil (R$)",
+                "Data Emissão_entrada": "Data Entrada",
+            }
+        )
+        mostrar_grid_selecionavel(display, key="grid_estoque_fiscal")
+        st.download_button(
+            "Exportar estoque fiscal",
+            data=_exportar_excel(display),
+            file_name="estoque_fiscal.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
 
 if __name__ == "__main__":
