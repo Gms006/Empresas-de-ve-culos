@@ -13,6 +13,10 @@ import os
 import tempfile
 import zipfile
 from pathlib import Path
+import zipfile
+
+import pandas as pd
+import streamlit as st
 
 import pandas as pd
 import streamlit as st
@@ -21,8 +25,8 @@ from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, GridUpdateMode
 from modules.estoque_veiculos import processar_xmls
 from modules.configurador_planilha import configurar_planilha
 from modules.transformadores_veiculos import (
-    gerar_estoque_fiscal,
     gerar_alertas_auditoria,
+    gerar_estoque_fiscal,
     gerar_kpis,
     gerar_resumo_mensal,
 )
@@ -53,13 +57,75 @@ def _init_session() -> None:
         st.session_state.setdefault(chave, valor)
 
 
-def _carregar_empresas():
+# ---------------------------------------------------------------------------
+# Estado da aplicação
+# ---------------------------------------------------------------------------
+
+def _init_session() -> None:
+    """Inicializa chaves do ``st.session_state`` com valores padrão."""
+    defaults = {
+        "processado": False,
+        "df_estoque": pd.DataFrame(),
+        "df_alertas": pd.DataFrame(),
+        "df_resumo": pd.DataFrame(),
+        "kpis": {},
+        "xml_paths": [],
+        "cnpj_empresa": "",
+        "erros_xml": [],
+        "download_dir": "",
+        "upload_dir": "",
+    }
+    for chave, valor in defaults.items():
+        st.session_state.setdefault(chave, valor)
+
+
+# ---------------------------------------------------------------------------
+# Entrada de dados
+# ---------------------------------------------------------------------------
+
+def _carregar_empresas() -> dict[str, str]:
     path = Path("config/empresas_config.json")
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        st.error("Arquivo de configuração das empresas não encontrado.")
+        return {}
 
 
-def _processar_arquivos(xml_paths, cnpj_empresa):
+def _upload_manual(files) -> list[str]:
+    """Armazena arquivos enviados manualmente e extrai ZIPs."""
+    upload_dir = Path(st.session_state.get("upload_dir", tempfile.mkdtemp(prefix="upload_")))
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    st.session_state.upload_dir = str(upload_dir)
+
+    paths: list[str] = []
+    for f in files:
+        dest = upload_dir / f.name
+        with open(dest, "wb") as out:
+            out.write(f.read())
+        if f.name.lower().endswith(".zip"):
+            try:
+                with zipfile.ZipFile(dest, "r") as zf:
+                    for name in zf.namelist():
+                        if name.lower().endswith(".xml"):
+                            base = Path(name).name
+                            extracted = upload_dir / base
+                            with open(extracted, "wb") as out_f:
+                                out_f.write(zf.read(name))
+                            paths.append(str(extracted))
+            except Exception as exc:  # pragma: no cover - apenas log
+                st.error(f"Erro ao extrair {f.name}: {exc}")
+        else:
+            paths.append(str(dest))
+    return paths
+
+
+# ---------------------------------------------------------------------------
+# Processamento de dados
+# ---------------------------------------------------------------------------
+
+def _processar_arquivos(xml_paths: list[str], cnpj_empresa: str) -> pd.DataFrame:
     if not xml_paths:
         return pd.DataFrame()
     df = processar_xmls(xml_paths, cnpj_empresa)
@@ -83,7 +149,6 @@ def _executar_pipeline(xml_paths, cnpj_empresa):
     df_resumo = gerar_resumo_mensal(df_estoque)
     kpis = gerar_kpis(df_estoque)
 
-    st.session_state.df_configurado = df_config
     st.session_state.df_estoque = df_estoque
     st.session_state.df_alertas = df_alertas
     st.session_state.df_resumo = df_resumo
@@ -263,6 +328,7 @@ def main():
     empresas = _carregar_empresas()
     nomes_empresas = [v["nome"] for v in empresas.values()]
 
+def sidebar(empresas: dict[str, str]) -> str | None:
     with st.sidebar:
         if LOGO.exists():
             st.image(str(LOGO), width=100)
@@ -460,7 +526,101 @@ def main():
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
         else:
-            st.write("Nenhum alerta fiscal encontrado.")
+            if st.button("Buscar XMLs do Drive") and empresa:
+                try:
+                    service = criar_servico_drive()
+                    download_dir = tempfile.mkdtemp(prefix="download_")
+                    xml_paths = baixar_xmls_empresa_zip(
+                        service, ROOT_FOLDER_ID, empresa, download_dir
+                    )
+                    st.session_state.download_dir = download_dir
+                except Exception as exc:  # pragma: no cover - depende do ambiente
+                    st.warning(f"Falha ao acessar Drive: {exc}")
+        st.session_state.xml_paths = xml_paths
+        st.session_state.cnpj_empresa = cnpj or ""
+        return cnpj
+
+
+def _mostrar_kpis(kpis: dict[str, float]) -> None:
+    cols = st.columns(len(kpis))
+    for col, (nome, valor) in zip(cols, kpis.items()):
+        col.metric(nome, f"R$ {valor:,.2f}" if "R$" in nome else f"{valor:,.2f}")
+
+
+def render_relatorios() -> None:
+    df = st.session_state.df_estoque
+    kpis = st.session_state.kpis
+    _mostrar_kpis(kpis)
+
+    vendidos = df[df["Situação"] == "Vendido"].copy()
+    estoque = df[df["Situação"] == "Em Estoque"].copy()
+
+    st.subheader("Veículos Vendidos")
+    st.dataframe(vendidos[
+        [
+            col
+            for col in [
+                "Chave",
+                "Produto", "Valor Entrada", "Valor Venda", "Lucro",
+                "ICMS Valor_saida", "ICMS Valor_entrada"
+            ]
+            if col in vendidos.columns
+        ]
+    ])
+    st.download_button(
+        "Exportar Vendas",
+        data=_exportar_excel(vendidos),
+        file_name="vendas.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    st.subheader("Veículos em Estoque")
+    st.dataframe(estoque[
+        [
+            col
+            for col in [
+                "Chave",
+                "Produto", "Valor Entrada", "Data Emissão_entrada", "Data Saída"
+            ]
+            if col in estoque.columns
+        ]
+    ])
+    st.download_button(
+        "Exportar Estoque",
+        data=_exportar_excel(estoque),
+        file_name="estoque.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    st.subheader("Resumo Financeiro Mensal")
+    st.dataframe(st.session_state.df_resumo)
+    st.download_button(
+        "Exportar Resumo",
+        data=_exportar_excel(st.session_state.df_resumo),
+        file_name="resumo_mensal.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    if not st.session_state.df_alertas.empty:
+        st.subheader("Alertas Fiscais")
+        st.dataframe(st.session_state.df_alertas)
+
+
+# ---------------------------------------------------------------------------
+# Ponto de entrada
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    st.set_page_config(page_title="Painel Fiscal", layout="wide")
+    _init_session()
+    empresas = _carregar_empresas()
+    cnpj = sidebar(empresas)
+    if cnpj and st.session_state.xml_paths and st.button("Processar XMLs"):
+        _executar_pipeline(st.session_state.xml_paths, cnpj)
+    if st.session_state.processado:
+        render_relatorios()
+    else:
+        st.info("Nenhum dado processado ainda.")
 
     elif page == "Estoque Fiscal":
         st.markdown("## Estoque Fiscal")
@@ -499,5 +659,5 @@ def main():
         )
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover - entrada do Streamlit
     main()

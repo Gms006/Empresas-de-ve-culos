@@ -91,19 +91,6 @@ def baixar_arquivo(service, file_id: str, destino: str) -> None:
                 break
 
 
-def baixar_xmls_da_pasta(service, pasta_id: str, destino: str) -> List[str]:
-    """Baixa todos os arquivos XML de ``pasta_id`` para ``destino``."""
-
-    arquivos = listar_arquivos(service, pasta_id)
-    caminhos = []
-    for arquivo in arquivos:
-        if arquivo["name"].lower().endswith(".xml"):
-            caminho_destino = os.path.join(destino, arquivo["name"])
-            baixar_arquivo(service, arquivo["id"], caminho_destino)
-            caminhos.append(caminho_destino)
-    return caminhos
-
-
 def baixar_xmls_empresa_zip(
     service,
     pasta_principal_id: str,
@@ -137,6 +124,9 @@ def baixar_xmls_empresa_zip(
     with zipfile.ZipFile(zip_path, "r") as zf:
         for name in zf.namelist():
             if name.lower().endswith(".xml"):
-                zf.extract(name, destino)
-                xmls.append(os.path.join(destino, name))
+                base = os.path.basename(name)
+                caminho = os.path.join(destino, base)
+                with zf.open(name) as src, open(caminho, "wb") as out:
+                    out.write(src.read())
+                xmls.append(caminho)
     return xmls
