@@ -115,7 +115,6 @@ def _exportar_excel(df: pd.DataFrame) -> bytes:
             df.to_excel(writer, index=False)
         return buffer.getvalue()
 
-
 def apurar_tributos_por_venda(df_vendas: pd.DataFrame) -> pd.DataFrame:
     """Aplica alíquotas básicas de tributos sobre o valor de venda."""
     df = df_vendas.copy()
