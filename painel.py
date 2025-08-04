@@ -45,6 +45,9 @@ def _init_session() -> None:
         "cnpj_empresa": "",
         "filtro_ano": None,
         "filtro_mes": None,
+        "download_dir": "",
+        "upload_dir": "",
+        "erros_xml": [],
     }
     for chave, valor in defaults.items():
         st.session_state.setdefault(chave, valor)
@@ -65,6 +68,7 @@ def _processar_arquivos(xml_paths, cnpj_empresa):
 
 def _executar_pipeline(xml_paths, cnpj_empresa):
     """Executa todas as etapas de transformação dos dados."""
+    st.session_state["erros_xml"] = []
     df_config = _processar_arquivos(xml_paths, cnpj_empresa)
     if df_config.empty:
         st.session_state.processado = False
@@ -88,24 +92,33 @@ def _executar_pipeline(xml_paths, cnpj_empresa):
 
 
 def _upload_manual(files):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        paths = []
-        for f in files:
-            dest = os.path.join(tmpdir, f.name)
-            with open(dest, "wb") as out:
-                out.write(f.read())
-            if f.name.lower().endswith(".zip"):
-                try:
-                    with zipfile.ZipFile(dest, "r") as zf:
-                        for name in zf.namelist():
-                            if name.lower().endswith(".xml"):
-                                zf.extract(name, tmpdir)
-                                paths.append(os.path.join(tmpdir, name))
-                except Exception as exc:
-                    st.error(f"Erro ao extrair {f.name}: {exc}")
-            else:
-                paths.append(dest)
-        return paths
+    """Armazena arquivos enviados manualmente em diretório persistente."""
+    upload_dir = Path(st.session_state.get("upload_dir", ""))
+    if not upload_dir or not upload_dir.exists():
+        upload_dir = Path(tempfile.mkdtemp(prefix="upload_"))
+        st.session_state.upload_dir = str(upload_dir)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    paths = []
+    for f in files:
+        dest = upload_dir / f.name
+        with open(dest, "wb") as out:
+            out.write(f.read())
+        if f.name.lower().endswith(".zip"):
+            try:
+                with zipfile.ZipFile(dest, "r") as zf:
+                    for name in zf.namelist():
+                        if name.lower().endswith(".xml"):
+                            extracted = upload_dir / name
+                            extracted.parent.mkdir(parents=True, exist_ok=True)
+                            with open(extracted, "wb") as out_f:
+                                out_f.write(zf.read(name))
+                            paths.append(str(extracted))
+            except Exception as exc:
+                st.error(f"Erro ao extrair {f.name}: {exc}")
+        else:
+            paths.append(str(dest))
+    return paths
 
 
 def _exportar_excel(df: pd.DataFrame) -> bytes:
@@ -114,6 +127,7 @@ def _exportar_excel(df: pd.DataFrame) -> bytes:
         with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
             df.to_excel(writer, index=False)
         return buffer.getvalue()
+
 
 def mostrar_grid_selecionavel(
     df: pd.DataFrame, key: str, selection_mode: str = "single"
@@ -240,11 +254,27 @@ def render_topbar(logo: Path) -> None:
                 st.write("Filtros adicionais podem ir aqui")
 
 
-def main():
-    st.set_page_config(page_title="Dashboard Neto Contabilidade", layout="wide")
-    _init_session()
+def _exportar_excel(df: pd.DataFrame) -> bytes:
+    """Gera um arquivo Excel em memória a partir do DataFrame informado."""
+    with io.BytesIO() as buffer:
+        with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+            df.to_excel(writer, index=False)
+        return buffer.getvalue()
 
-    LOGO = Path("config/logo.png")
+def mostrar_grid_selecionavel(
+    df: pd.DataFrame, key: str, selection_mode: str = "single"
+):
+    """Exibe ``df`` em um grid interativo permitindo seleção de linhas."""
+    if df is None or df.empty:
+        st.write("Nenhum dado para exibir.")
+        return None
+
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_pagination(paginationAutoPageSize=True)
+    gb.configure_side_bar()
+    gb.configure_selection(selection_mode, use_checkbox=True)
+    gb.configure_default_column(resizable=True, sortable=True, filter=True)
+    grid_options = gb.build()
 
     empresas = _carregar_empresas()
     nomes_empresas = [v["nome"] for v in empresas.values()]
@@ -263,12 +293,18 @@ def main():
                 if st.button("Baixar XMLs do Drive"):
                     with st.spinner("Baixando XMLs do Drive..."):
                         service = criar_servico_drive()
-                        with tempfile.TemporaryDirectory() as tmpdir:
-                            xmls = baixar_xmls_empresa_zip(
-                                service, ROOT_FOLDER_ID, empresa_nome, tmpdir
-                            )
+                        download_dir = Path(st.session_state.get("download_dir", ""))
+                        if not download_dir or not download_dir.exists():
+                            download_dir = Path(tempfile.mkdtemp(prefix="xmls_"))
+                            st.session_state.download_dir = str(download_dir)
+                        download_dir.mkdir(parents=True, exist_ok=True)
+
+                        xmls = baixar_xmls_empresa_zip(
+                            service, ROOT_FOLDER_ID, empresa_nome, download_dir
+                        )
                     st.session_state.xml_paths = xmls
                     st.session_state.processado = False
+                    st.session_state.erros_xml = []
                     st.success(f"{len(xmls)} arquivos obtidos.")
             else:
                 uploaded = st.file_uploader(
@@ -278,6 +314,7 @@ def main():
                     paths = _upload_manual(uploaded)
                     st.session_state.xml_paths = paths
                     st.session_state.processado = False
+                    st.session_state.erros_xml = []
                     st.success(f"{len(paths)} arquivos carregados.")
 
             if st.session_state.processado and not st.session_state.df_estoque.empty:
@@ -308,6 +345,20 @@ def main():
 
     render_topbar(LOGO)
 
+    if st.session_state.xml_paths:
+        st.markdown("**Verificando existência dos XMLs carregados:**")
+        existentes = [p for p in st.session_state.xml_paths if Path(p).exists()]
+        faltando = [p for p in st.session_state.xml_paths if not Path(p).exists()]
+        st.write(
+            f"Existem {len(existentes)} arquivos válidos e {len(faltando)} ausentes."
+        )
+        if faltando:
+            st.warning(
+                "Alguns caminhos não existem mais; isso indica que foram carregados de uma pasta temporária expirou."
+            )
+            for p in faltando[:5]:
+                st.text(p)
+
     if not empresa_nome:
         st.stop()
 
@@ -321,6 +372,16 @@ def main():
                     )
                 if st.session_state.processado:
                     st.success("Dados carregados com sucesso.")
+                    if st.session_state.get("erros_xml"):
+                        st.warning(
+                            "Alguns XMLs falharam ao serem processados. Veja detalhes abaixo:"
+                        )
+                        for e in st.session_state["erros_xml"][:10]:
+                            st.text(e)
+                        if len(st.session_state["erros_xml"]) > 10:
+                            st.text(
+                                f"... e mais {len(st.session_state['erros_xml']) - 10} erros"
+                            )
         else:
             st.warning("Carregue os arquivos na barra lateral.")
         return
@@ -416,6 +477,42 @@ def main():
                 )
         else:
             st.write("Nenhum alerta fiscal encontrado.")
+    elif page == "Estoque Fiscal":
+        st.markdown("## Estoque Fiscal")
+        estoque = df_filtrado.copy()
+        if "Data Emissão_entrada" in estoque.columns:
+            estoque["Dias em Estoque"] = (
+                pd.to_datetime(estoque["Data Saída"], errors="coerce").fillna(pd.Timestamp.today())
+                - pd.to_datetime(estoque["Data Emissão_entrada"], errors="coerce")
+            ).dt.days
+        estoque["Situação"] = estoque["Situação"].fillna("Desconhecido")
+        cols_exibir = [
+            c
+            for c in [
+                "Chassi_entrada",
+                "Valor Entrada",
+                "Situação",
+                "Data Emissão_entrada",
+                "Data Saída",
+                "Dias em Estoque",
+            ]
+            if c in estoque.columns
+        ]
+        display = estoque[cols_exibir].rename(
+            columns={
+                "Chassi_entrada": "Chassi",
+                "Valor Entrada": "Valor Contábil (R$)",
+                "Data Emissão_entrada": "Data Entrada",
+            }
+        )
+        mostrar_grid_selecionavel(display, key="grid_estoque_fiscal")
+        st.download_button(
+            "Exportar estoque fiscal",
+            data=_exportar_excel(display),
+            file_name="estoque_fiscal.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
     elif page == "Estoque Fiscal":
         st.markdown("## Estoque Fiscal")
         estoque = df_filtrado.copy()
