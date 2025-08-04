@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, GridUpdateMode
 
 from modules.estoque_veiculos import processar_xmls
 from modules.configurador_planilha import configurar_planilha
@@ -28,7 +29,6 @@ from modules.transformadores_veiculos import (
 from utils.google_drive_utils import criar_servico_drive, baixar_xmls_empresa_zip, ROOT_FOLDER_ID
 from utils.filtros_utils import obter_anos_meses_unicos, aplicar_filtro_periodo
 from utils.formatador_utils import formatar_moeda
-from utils.interface_utils import formatar_df_exibicao
 
 
 def _init_session() -> None:
@@ -115,6 +115,35 @@ def _exportar_excel(df: pd.DataFrame) -> bytes:
             df.to_excel(writer, index=False)
         return buffer.getvalue()
 
+def mostrar_grid_selecionavel(
+    df: pd.DataFrame, key: str, selection_mode: str = "single"
+):
+    """Exibe ``df`` em um grid interativo permitindo seleção de linhas."""
+    if df is None or df.empty:
+        st.write("Nenhum dado para exibir.")
+        return None
+
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_pagination(paginationAutoPageSize=True)
+    gb.configure_side_bar()
+    gb.configure_selection(selection_mode, use_checkbox=True)
+    gb.configure_default_column(resizable=True, sortable=True, filter=True)
+    grid_options = gb.build()
+
+    grid_response = AgGrid(
+        df,
+        gridOptions=grid_options,
+        data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+        update_mode=GridUpdateMode.MODEL_CHANGED,
+        fit_columns_on_grid_load=True,
+        enable_enterprise_modules=False,
+        theme="dark",
+        key=key,
+        allow_unsafe_jscode=True,
+    )
+    return grid_response
+
+
 def apurar_tributos_por_venda(df_vendas: pd.DataFrame) -> pd.DataFrame:
     """Aplica alíquotas básicas de tributos sobre o valor de venda."""
     df = df_vendas.copy()
@@ -175,7 +204,7 @@ def montar_relatorio_vendas_compras(st_session) -> pd.DataFrame:
 
 def render_topbar(logo: Path) -> None:
     """Renderiza a barra superior com navegação e ações rápidas."""
-    cols = st.columns([1, 6, 2])
+    cols = st.columns([1, 6, 4])
     with cols[0]:
         if logo.exists():
             st.image(str(logo), width=50)
@@ -191,18 +220,24 @@ def render_topbar(logo: Path) -> None:
             unsafe_allow_html=True,
         )
     with cols[2]:
-        escolha = st.selectbox(
-            "",
-            ["Relatórios", "Vendas", "Estoque Fiscal", "Mapa de Vendas"],
-            key="nav_select",
+        paginas = ["Relatórios", "Mapa de Vendas", "Estoque Fiscal"]
+        current = st.session_state.get("page", "Relatórios")
+        idx = paginas.index(current) if current in paginas else 0
+        pagina = st.radio(
+            "Navegação",
+            paginas,
+            horizontal=True,
+            index=idx,
             label_visibility="collapsed",
         )
-        st.session_state.page = escolha
-        if st.button("☰"):
+        st.session_state.page = pagina
+
+        if st.button("☰", key="hamburger"):
             with st.expander("Ações rápidas", expanded=True):
-                st.write("• Reprocessar XMLs")
-                if st.button("Reprocessar agora"):
+                if st.button("Reprocessar XMLs"):
                     st.session_state.processado = False
+                    st.experimental_rerun()
+                st.write("Filtros adicionais podem ir aqui")
 
 
 def main():
@@ -316,25 +351,71 @@ def main():
     page = st.session_state.page
 
     if page == "Relatórios":
-        st.markdown("### Carros Vendidos x Comprados Repetidos")
-        rel_vendas = montar_relatorio_vendas_compras(st.session_state)
-        st.dataframe(formatar_df_exibicao(rel_vendas), use_container_width=True)
-        st.download_button(
-            "Exportar relatório de vendas-compras",
-            data=_exportar_excel(rel_vendas),
-            file_name="vendas_compras_relatorio.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        # Produtos vendidos
+        st.markdown("### Produtos Vendidos")
+        vendas = st.session_state.df_configurado[
+            st.session_state.df_configurado["Tipo Nota"] == "Saída"
+        ].copy()
+        vendas = aplicar_filtro_periodo(
+            vendas,
+            "Data Emissão",
+            st.session_state.get("filtro_ano"),
+            st.session_state.get("filtro_mes"),
         )
-    elif page == "Vendas":
-        st.markdown("## Detalhe de Vendas")
-        rel_vendas = montar_relatorio_vendas_compras(st.session_state)
-        st.dataframe(formatar_df_exibicao(rel_vendas), use_container_width=True)
-        st.download_button(
-            "Exportar relatório de vendas detalhado",
-            data=_exportar_excel(rel_vendas),
-            file_name="vendas_detalhado.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        vendas_tab = vendas[["Produto", "Valor Total"]].rename(
+            columns={"Valor Total": "Valor (R$)"}
         )
+        grid_vendas = mostrar_grid_selecionavel(vendas_tab, key="grid_vendas")
+        if grid_vendas:
+            st.download_button(
+                "Exportar Vendas",
+                data=_exportar_excel(vendas_tab),
+                file_name="vendas_detalhado.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+        # Estoque parado
+        st.markdown("### Estoque Parado")
+        estoque_parado = df_filtrado[df_filtrado["Situação"] == "Em Estoque"].copy()
+        if "Data Emissão_entrada" in estoque_parado.columns and not estoque_parado.empty:
+            estoque_parado["Estoque (dias)"] = (
+                pd.Timestamp.today()
+                - pd.to_datetime(estoque_parado["Data Emissão_entrada"], errors="coerce")
+            ).dt.days
+        estoque_exibir = estoque_parado[
+            ["Chave", "Valor Entrada", "Estoque (dias)", "Situação"]
+        ].rename(
+            columns={"Chave": "Chassi/Chave", "Valor Entrada": "Valor Contábil (R$)"}
+        )
+        grid_estoque = mostrar_grid_selecionavel(estoque_exibir, key="grid_estoque")
+        if grid_estoque:
+            st.download_button(
+                "Exportar Estoque Fiscal",
+                data=_exportar_excel(estoque_exibir),
+                file_name="estoque_fiscal.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+        # Alertas fiscais
+        st.markdown("### Alertas Fiscais")
+        if not st.session_state.df_alertas.empty:
+            desired = ["Estoque Parado", "DDV"]
+            existing = [c for c in desired if c in st.session_state.df_alertas.columns]
+            tabela_alertas = (
+                st.session_state.df_alertas[existing]
+                if existing
+                else st.session_state.df_alertas
+            )
+            grid_alertas = mostrar_grid_selecionavel(tabela_alertas, key="grid_alertas")
+            if grid_alertas:
+                st.download_button(
+                    "Exportar Alertas Fiscais",
+                    data=_exportar_excel(tabela_alertas),
+                    file_name="alertas_fiscais.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+        else:
+            st.write("Nenhum alerta fiscal encontrado.")
     elif page == "Estoque Fiscal":
         st.markdown("## Estoque Fiscal")
         estoque = df_filtrado.copy()
@@ -363,7 +444,7 @@ def main():
                 "Data Emissão_entrada": "Data Entrada",
             }
         )
-        st.dataframe(formatar_df_exibicao(display), use_container_width=True)
+        mostrar_grid_selecionavel(display, key="grid_estoque_fiscal")
         st.download_button(
             "Exportar estoque fiscal",
             data=_exportar_excel(display),
