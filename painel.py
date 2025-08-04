@@ -61,6 +61,9 @@ def _carregar_empresas() -> dict[str, str]:
         st.error("Arquivo de configuração das empresas não encontrado.")
         return {}
 
+# ---------------------------------------------------------------------------
+# Processamento de dados
+# ---------------------------------------------------------------------------
 
 def _upload_manual(files) -> list[str]:
     """Armazena arquivos enviados manualmente e extrai ZIPs."""
@@ -104,6 +107,7 @@ def _processar_arquivos(xml_paths: list[str], cnpj_empresa: str) -> pd.DataFrame
 def _executar_pipeline(xml_paths: list[str], cnpj_empresa: str) -> None:
     st.session_state["erros_xml"] = []
     df_config = _processar_arquivos(xml_paths, cnpj_empresa)
+    
     if df_config.empty:
         st.session_state.processado = False
         st.warning("Nenhum dado processado.")
@@ -233,11 +237,9 @@ def render_relatorios() -> None:
         st.subheader("Alertas Fiscais")
         st.dataframe(st.session_state.df_alertas)
 
-
 # ---------------------------------------------------------------------------
 # Ponto de entrada
 # ---------------------------------------------------------------------------
-
 def main() -> None:
     st.set_page_config(page_title="Painel Fiscal", layout="wide")
     _init_session()
