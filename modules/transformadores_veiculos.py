@@ -146,27 +146,86 @@ def gerar_alertas_auditoria(df_entrada, df_saida):
 
 # Gerar KPIs
 def gerar_kpis(df_estoque):
+    """Calcula indicadores de desempenho financeiros e fiscais."""
+
+    vendidos = df_estoque[df_estoque["Situação"] == "Vendido"].copy()
+    estoque = df_estoque[df_estoque["Situação"] == "Em Estoque"].copy()
+
+    icms_debito = (
+        pd.to_numeric(vendidos.get("ICMS Valor_saida"), errors="coerce")
+        .fillna(0)
+        .sum()
+    )
+    icms_credito = (
+        pd.to_numeric(vendidos.get("ICMS Valor_entrada"), errors="coerce")
+        .fillna(0)
+        .sum()
+    )
+    lucro_liquido = (vendidos["Lucro"].sum() - icms_debito + icms_credito)
+
     return {
-        "Total Vendido (R$)": df_estoque[df_estoque['Situação'] == 'Vendido']['Valor Venda'].sum(),
-        "Lucro Total (R$)": df_estoque['Lucro'].sum(),
-        "Estoque Atual (R$)": df_estoque[df_estoque['Situação'] == 'Em Estoque']['Valor Entrada'].sum()
+        "Total Vendido (R$)": vendidos["Valor Venda"].sum(),
+        "Lucro Líquido (R$)": lucro_liquido,
+        "ICMS Débito (R$)": icms_debito,
+        "ICMS Crédito (R$)": icms_credito,
+        "ICMS Apurado (R$)": icms_debito - icms_credito,
+        "Estoque Atual (R$)": estoque["Valor Entrada"].sum(),
     }
 
 # Gerar Resumo Mensal
 def gerar_resumo_mensal(df_estoque):
+    """Gera resumo financeiro mensal com lucros e ICMS."""
+
     df = df_estoque.copy()
-    # Usar o mês base calculado no estoque
-    base_col = 'Mês Base' if 'Mês Base' in df.columns else 'Mês Saída'
-    entrada_vals = df.get('Mês Entrada')
-    df['Mês Resumo'] = df[base_col].fillna(entrada_vals if entrada_vals is not None else pd.NaT)
-    group_cols = ['Mês Resumo']
-    if 'Empresa CNPJ' in df.columns:
-        group_cols.insert(0, 'Empresa CNPJ')
+    base_col = "Mês Base" if "Mês Base" in df.columns else "Mês Saída"
+    entrada_vals = df.get("Mês Entrada")
+    df["Mês Resumo"] = df[base_col].fillna(
+        entrada_vals if entrada_vals is not None else pd.NaT
+    )
+
+    group_cols = ["Mês Resumo"]
+    index_cols = ["Mês"]
+    if "Empresa CNPJ" in df.columns:
+        group_cols.insert(0, "Empresa CNPJ")
+        index_cols.insert(0, "Empresa CNPJ")
+
+    df["ICMS Débito"] = pd.to_numeric(
+        df.get("ICMS Valor_saida"), errors="coerce"
+    ).fillna(0)
+    df["ICMS Crédito"] = pd.to_numeric(
+        df.get("ICMS Valor_entrada"), errors="coerce"
+    ).fillna(0)
 
     resumo = (
         df.groupby(group_cols)
-        .agg({'Valor Entrada': 'sum', 'Valor Venda': 'sum', 'Lucro': 'sum'})
+        .agg(
+            {
+                "Valor Entrada": "sum",
+                "Valor Venda": "sum",
+                "Lucro": "sum",
+                "ICMS Débito": "sum",
+                "ICMS Crédito": "sum",
+            }
+        )
         .reset_index()
-        .rename(columns={'Mês Resumo': 'Mês'})
+        .rename(
+            columns={
+                "Mês Resumo": "Mês",
+                "Valor Entrada": "Total Entradas",
+                "Valor Venda": "Total Saídas",
+                "Lucro": "Lucro Bruto",
+            }
+        )
     )
+
+    resumo["Lucro Líquido"] = resumo["Lucro Bruto"] - (
+        resumo["ICMS Débito"] - resumo["ICMS Crédito"]
+    )
+    estoque_vals = (
+        df[df["Situação"] == "Em Estoque"].groupby(group_cols)["Valor Entrada"].sum()
+    )
+    resumo["Saldo Estoque"] = estoque_vals.reindex(
+        resumo.set_index(index_cols).index, fill_value=0
+    ).values
+
     return resumo
