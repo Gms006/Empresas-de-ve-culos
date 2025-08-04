@@ -115,24 +115,94 @@ def _exportar_excel(df: pd.DataFrame) -> bytes:
             df.to_excel(writer, index=False)
         return buffer.getvalue()
 
+def apurar_tributos_por_venda(df_vendas: pd.DataFrame) -> pd.DataFrame:
+    """Aplica alíquotas básicas de tributos sobre o valor de venda."""
+    df = df_vendas.copy()
+    valor = pd.to_numeric(df.get("Valor Total"), errors="coerce").fillna(0.0)
+    df["Valor Total"] = valor
+    df["ICMS"] = valor * 0.18
+    df["PIS"] = valor * 0.0165
+    df["COFINS"] = valor * 0.076
+    df["Tributos Totais"] = df[["ICMS", "PIS", "COFINS"]].sum(axis=1)
+    return df
+
+
+def montar_relatorio_vendas_compras(st_session) -> pd.DataFrame:
+    """Relaciona vendas com compras repetidas por chassi."""
+    df_config = st_session.df_configurado
+    vendas = df_config[df_config["Tipo Nota"] == "Saída"].copy()
+    entradas = df_config[df_config["Tipo Nota"] == "Entrada"].copy()
+
+    vendas = aplicar_filtro_periodo(
+        vendas, "Data Emissão", st_session.get("filtro_ano"), st_session.get("filtro_mes")
+    )
+    entradas = aplicar_filtro_periodo(
+        entradas, "Data Emissão", st_session.get("filtro_ano"), st_session.get("filtro_mes")
+    )
+
+    for df in (vendas, entradas):
+        if "Chassi" in df.columns:
+            df["Chassi_norm"] = (
+                df["Chassi"].astype(str).str.replace(r"\W", "", regex=True).str.upper()
+            )
+        else:
+            df["Chassi_norm"] = ""
+
+    compras_agrupadas = (
+        entradas.groupby("Chassi_norm")
+        .agg(
+            vezes_comprado=("Chassi_norm", "count"),
+            valor_medio_compra=("Valor Total", "mean"),
+            total_compra=("Valor Total", "sum"),
+        )
+        .reset_index()
+        .rename(columns={"Chassi_norm": "Chassi"})
+    )
+
+    vendas_tributos = apurar_tributos_por_venda(vendas)
+    vendas_tributos = vendas_tributos.rename(
+        columns={"Chassi_norm": "Chassi", "Valor Total": "Valor Venda"}
+    )
+
+    rel = vendas_tributos.merge(compras_agrupadas, on="Chassi", how="left")
+    rel["Lucro Líquido Estimado"] = (
+        rel["Valor Venda"]
+        - rel.get("total_compra", 0).fillna(0)
+        - rel.get("Tributos Totais", 0).fillna(0)
+    )
+    return rel
+
 
 def render_topbar(logo: Path) -> None:
-    """Renderiza a barra superior com navegação."""
-    col_logo, col_nav = st.columns([3, 2])
-    with col_logo:
+    """Renderiza a barra superior com navegação e ações rápidas."""
+    cols = st.columns([1, 6, 2])
+    with cols[0]:
         if logo.exists():
-            st.image(str(logo), width=60)
+            st.image(str(logo), width=50)
         else:
-            st.write("Logo não encontrada")
-        st.markdown("**NETO CONTABILIDADE**\nVILECRDE")
-    with col_nav:
-        pagina = st.radio(
-            "Navegação",
-            ["Relatórios", "Mapa de Vendas"],
-            horizontal=True,
-            index=0 if st.session_state.page == "Relatórios" else 1,
+            st.markdown("**NETO CONTABILIDADE**")
+    with cols[1]:
+        st.markdown(
+            "<h1 style='margin:0;'>NETO <span style='color:#d1d5db;'>CONTABILIDADE</span></h1>",
+            unsafe_allow_html=True,
         )
-        st.session_state.page = pagina
+        st.markdown(
+            "<div style='font-size:12px;color:#d1d5db;'>VILECRDE</div>",
+            unsafe_allow_html=True,
+        )
+    with cols[2]:
+        escolha = st.selectbox(
+            "",
+            ["Relatórios", "Vendas", "Estoque Fiscal", "Mapa de Vendas"],
+            key="nav_select",
+            label_visibility="collapsed",
+        )
+        st.session_state.page = escolha
+        if st.button("☰"):
+            with st.expander("Ações rápidas", expanded=True):
+                st.write("• Reprocessar XMLs")
+                if st.button("Reprocessar agora"):
+                    st.session_state.processado = False
 
 
 def main():
@@ -241,62 +311,65 @@ def main():
     c1, c2, c3 = st.columns(3)
     c1.metric("Total Vendido", formatar_moeda(kpis.get("Total Vendido (R$)", 0)))
     c2.metric("Lucro Total", formatar_moeda(kpis.get("Lucro Total (R$)", 0)))
-    c3.metric(
-        "Estoque Atual (R$)",
-        formatar_moeda(kpis.get("Estoque Atual (R$)", 0)),
-    )
+    c3.metric("Estoque Atual (R$)", formatar_moeda(kpis.get("Estoque Atual (R$)", 0)))
 
-    st.download_button(
-        "Exportar relatório de estoque",
-        data=_exportar_excel(df_filtrado),
-        file_name="relatorio_estoque.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
+    page = st.session_state.page
 
-    vendas = st.session_state.df_configurado[
-        st.session_state.df_configurado["Tipo Nota"] == "Saída"
-    ].copy()
-    vendas = aplicar_filtro_periodo(
-        vendas, "Data Emissão", st.session_state.get("filtro_ano"), st.session_state.get("filtro_mes")
-    )
-    vendas_tab = vendas[["Produto", "Valor Total"]].rename(
-        columns={"Valor Total": "Valor (R$)"}
-    )
-
-    estoque_parado = df_filtrado[df_filtrado["Situação"] == "Em Estoque"].copy()
-    if "Data Emissão_entrada" in estoque_parado.columns and not estoque_parado.empty:
-        estoque_parado["Estoque (dias)"] = (
-            pd.Timestamp.today()
-            - pd.to_datetime(estoque_parado["Data Emissão_entrada"], errors="coerce")
-        ).dt.days
-    estoque_tab = estoque_parado[["Chassi_entrada", "Estoque (dias)"]].rename(
-        columns={"Chassi_entrada": "Estoque"}
-    )
-
-    c_left, c_right = st.columns([2, 1])
-    with c_left:
-        t1, t2 = st.columns(2)
-        with t1:
-            st.markdown("### Produtos Vendidos")
-            st.dataframe(formatar_df_exibicao(vendas_tab), use_container_width=True)
-        with t2:
-            st.markdown("### Estoque Parado")
-            st.dataframe(formatar_df_exibicao(estoque_tab), use_container_width=True)
-    with c_right:
-        st.markdown("### Alertas Fiscais")
-        num_alertas = len(st.session_state.df_alertas)
-        st.write(f"Total de alertas: {num_alertas}")
-        if not st.session_state.df_alertas.empty:
-            desired = ["Estoque Parado", "DDV"]
-            existing = [c for c in desired if c in st.session_state.df_alertas.columns]
-            tabela = (
-                st.session_state.df_alertas[existing]
-                if existing
-                else st.session_state.df_alertas
-            )
-            st.dataframe(formatar_df_exibicao(tabela), use_container_width=True)
-        else:
-            st.write("Nenhum alerta fiscal encontrado.")
+    if page == "Relatórios":
+        st.markdown("### Carros Vendidos x Comprados Repetidos")
+        rel_vendas = montar_relatorio_vendas_compras(st.session_state)
+        st.dataframe(formatar_df_exibicao(rel_vendas), use_container_width=True)
+        st.download_button(
+            "Exportar relatório de vendas-compras",
+            data=_exportar_excel(rel_vendas),
+            file_name="vendas_compras_relatorio.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    elif page == "Vendas":
+        st.markdown("## Detalhe de Vendas")
+        rel_vendas = montar_relatorio_vendas_compras(st.session_state)
+        st.dataframe(formatar_df_exibicao(rel_vendas), use_container_width=True)
+        st.download_button(
+            "Exportar relatório de vendas detalhado",
+            data=_exportar_excel(rel_vendas),
+            file_name="vendas_detalhado.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    elif page == "Estoque Fiscal":
+        st.markdown("## Estoque Fiscal")
+        estoque = df_filtrado.copy()
+        if "Data Emissão_entrada" in estoque.columns:
+            estoque["Dias em Estoque"] = (
+                pd.to_datetime(estoque["Data Saída"], errors="coerce").fillna(pd.Timestamp.today())
+                - pd.to_datetime(estoque["Data Emissão_entrada"], errors="coerce")
+            ).dt.days
+        estoque["Situação"] = estoque["Situação"].fillna("Desconhecido")
+        cols_exibir = [
+            c
+            for c in [
+                "Chassi_entrada",
+                "Valor Entrada",
+                "Situação",
+                "Data Emissão_entrada",
+                "Data Saída",
+                "Dias em Estoque",
+            ]
+            if c in estoque.columns
+        ]
+        display = estoque[cols_exibir].rename(
+            columns={
+                "Chassi_entrada": "Chassi",
+                "Valor Entrada": "Valor Contábil (R$)",
+                "Data Emissão_entrada": "Data Entrada",
+            }
+        )
+        st.dataframe(formatar_df_exibicao(display), use_container_width=True)
+        st.download_button(
+            "Exportar estoque fiscal",
+            data=_exportar_excel(display),
+            file_name="estoque_fiscal.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
 
 if __name__ == "__main__":
