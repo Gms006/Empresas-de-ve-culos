@@ -254,11 +254,27 @@ def render_topbar(logo: Path) -> None:
                 st.write("Filtros adicionais podem ir aqui")
 
 
-def main():
-    st.set_page_config(page_title="Dashboard Neto Contabilidade", layout="wide")
-    _init_session()
+def _exportar_excel(df: pd.DataFrame) -> bytes:
+    """Gera um arquivo Excel em memória a partir do DataFrame informado."""
+    with io.BytesIO() as buffer:
+        with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+            df.to_excel(writer, index=False)
+        return buffer.getvalue()
 
-    LOGO = Path("config/logo.png")
+def mostrar_grid_selecionavel(
+    df: pd.DataFrame, key: str, selection_mode: str = "single"
+):
+    """Exibe ``df`` em um grid interativo permitindo seleção de linhas."""
+    if df is None or df.empty:
+        st.write("Nenhum dado para exibir.")
+        return None
+
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_pagination(paginationAutoPageSize=True)
+    gb.configure_side_bar()
+    gb.configure_selection(selection_mode, use_checkbox=True)
+    gb.configure_default_column(resizable=True, sortable=True, filter=True)
+    grid_options = gb.build()
 
     empresas = _carregar_empresas()
     nomes_empresas = [v["nome"] for v in empresas.values()]
@@ -461,6 +477,41 @@ def main():
                 )
         else:
             st.write("Nenhum alerta fiscal encontrado.")
+    elif page == "Estoque Fiscal":
+        st.markdown("## Estoque Fiscal")
+        estoque = df_filtrado.copy()
+        if "Data Emissão_entrada" in estoque.columns:
+            estoque["Dias em Estoque"] = (
+                pd.to_datetime(estoque["Data Saída"], errors="coerce").fillna(pd.Timestamp.today())
+                - pd.to_datetime(estoque["Data Emissão_entrada"], errors="coerce")
+            ).dt.days
+        estoque["Situação"] = estoque["Situação"].fillna("Desconhecido")
+        cols_exibir = [
+            c
+            for c in [
+                "Chassi_entrada",
+                "Valor Entrada",
+                "Situação",
+                "Data Emissão_entrada",
+                "Data Saída",
+                "Dias em Estoque",
+            ]
+            if c in estoque.columns
+        ]
+        display = estoque[cols_exibir].rename(
+            columns={
+                "Chassi_entrada": "Chassi",
+                "Valor Entrada": "Valor Contábil (R$)",
+                "Data Emissão_entrada": "Data Entrada",
+            }
+        )
+        mostrar_grid_selecionavel(display, key="grid_estoque_fiscal")
+        st.download_button(
+            "Exportar estoque fiscal",
+            data=_exportar_excel(display),
+            file_name="estoque_fiscal.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
     elif page == "Estoque Fiscal":
         st.markdown("## Estoque Fiscal")
