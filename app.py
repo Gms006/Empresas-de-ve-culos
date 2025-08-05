@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 import pandas as pd
 import streamlit as st
 from datetime import date
@@ -64,11 +66,24 @@ def _load_estoque_data() -> pd.DataFrame:
 
 
 def _empresas_list() -> list[str]:
-    """Obtém a lista de empresas presentes nos dados."""
+    """Lista empresas configuradas ou presentes nos dados."""
+
+    empresas: set[str] = set()
+
+    # Empresas definidas em arquivo de configuração
+    path = Path("config/empresas_config.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            empresas.update(json.load(f).keys())
+    except FileNotFoundError:  # pragma: no cover - interface
+        pass
+
+    # Empresas já presentes nos CSVs
     df_v = _load_vendidos_data()
     df_e = _load_estoque_data()
-    empresas = set(df_v.get("empresa", pd.Series()).dropna())
+    empresas.update(df_v.get("empresa", pd.Series()).dropna())
     empresas.update(df_e.get("empresa", pd.Series()).dropna())
+
     lista = sorted(empresas)
     return lista or [""]
 
@@ -144,6 +159,7 @@ def show_home() -> None:
     st.set_page_config(layout="wide", page_title="Home - Emp. de Veículos")
 
     st.sidebar.title("Filtros")
+    st.sidebar.markdown("[Importar notas via Drive](painel.py)")
     empresas_list = _empresas_list()
     empresa = st.sidebar.selectbox("Empresa", empresas_list)
     mes_inicio, mes_fim = st.sidebar.slider("Mês", 1, 12, (1, 12))
@@ -180,6 +196,7 @@ def show_reports() -> None:
     st.set_page_config(layout="wide", page_title="Relatórios - Emp. de Veículos")
 
     st.sidebar.title("Filtros")
+    st.sidebar.markdown("[Importar notas via Drive](painel.py)")
     empresas_list = _empresas_list()
     empresa = st.sidebar.selectbox("Empresa", empresas_list)
     data_ini = date.today().replace(month=1, day=1)
