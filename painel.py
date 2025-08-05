@@ -103,10 +103,12 @@ def _upload_manual(files) -> list[str]:
 # Processamento de dados
 # ---------------------------------------------------------------------------
 
-def _processar_arquivos(xml_paths: list[str], cnpj_empresa: str) -> pd.DataFrame:
+def _processar_arquivos(
+    xml_paths: list[str], cnpj_empresa: str, erros: list[str] | None = None
+) -> pd.DataFrame:
     if not xml_paths:
         return pd.DataFrame()
-    df = processar_xmls(xml_paths, cnpj_empresa)
+    df = processar_xmls(xml_paths, cnpj_empresa, erros=erros)
     df = configurar_planilha(df)
     validar_campos_obrigatorios(df)
     return df
@@ -114,7 +116,9 @@ def _processar_arquivos(xml_paths: list[str], cnpj_empresa: str) -> pd.DataFrame
 
 def _executar_pipeline(xml_paths: list[str], cnpj_empresa: str) -> None:
     st.session_state["erros_xml"] = []
-    df_config = _processar_arquivos(xml_paths, cnpj_empresa)
+    df_config = _processar_arquivos(
+        xml_paths, cnpj_empresa, st.session_state["erros_xml"]
+    )
     st.session_state.df_configurado = df_config
     
     if df_config.empty:
