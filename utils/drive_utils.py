@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import logging
+import zipfile
 from typing import List, Optional
 
 import json
@@ -11,6 +12,9 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
+
+
+log = logging.getLogger(__name__)
 
 
 def criar_servico_drive():
@@ -106,16 +110,24 @@ def baixar_xmls_empresa_zip(
     destino: str,
 ) -> List[str]:
     """Baixa o arquivo ``*.zip`` da pasta da empresa e retorna os XMLs extraídos."""
+
+    log.info(
+        "Buscando pasta da empresa '%s' em '%s'", nome_empresa, pasta_principal_id
+    )
     empresa_id = _buscar_subpasta_id(service, pasta_principal_id, nome_empresa)
     if not empresa_id:
+        log.error("Pasta da empresa '%s' não encontrada", nome_empresa)
         raise FileNotFoundError(
             f"Pasta da empresa '{nome_empresa}' não encontrada no Drive"
         )
+    log.info("Pasta da empresa encontrada: %s", empresa_id)
 
     arquivos = listar_arquivos(service, empresa_id)
-    arquivos_zip = [a for a in arquivos if a["name"].lower().endswith(".zip")]
-    if not arquivos_zip:
+    alvo = next((a for a in arquivos if a["name"].lower().endswith(".zip")), None)
+    if not alvo:
+        log.warning("Nenhum arquivo ZIP encontrado para '%s'", nome_empresa)
         return []
+    log.info("Arquivo ZIP encontrado: %s (id=%s)", alvo["name"], alvo["id"])
 
     zip_config = os.getenv("NOME_ARQUIVO_ZIP")
     if len(arquivos_zip) > 1:
@@ -147,15 +159,16 @@ def baixar_xmls_empresa_zip(
     os.makedirs(destino, exist_ok=True)
     zip_path = os.path.join(destino, "empresa.zip")
     baixar_arquivo(service, alvo["id"], zip_path)
+    log.info("Download concluído: %s", zip_path)
     try:
-        import zipfile
-
         with zipfile.ZipFile(zip_path) as zf:
+            log.info("Conteúdo do ZIP: %s", zf.namelist())
             zf.extractall(destino)
     except zipfile.BadZipFile as exc:
-        raise ValueError(
-            f"Arquivo ZIP inválido para a empresa '{nome_empresa}'",
-        ) from exc
+        log.exception(
+            "Falha ao processar ZIP para a empresa '%s'", nome_empresa
+        )
+        raise
 
     xmls = [
         os.path.join(root, f)
@@ -164,6 +177,7 @@ def baixar_xmls_empresa_zip(
         if f.lower().endswith(".xml")
     ]
     if not xmls:
-        logging.warning("Nenhum XML encontrado após a extração em %s", destino)
+        log.error("Nenhum XML encontrado em %s", destino)
         raise FileNotFoundError(f"Nenhum XML encontrado em {destino}")
+    log.info("XMLs extraídos: %s", [os.path.basename(x) for x in xmls])
     return xmls

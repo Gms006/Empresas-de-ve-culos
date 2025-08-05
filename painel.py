@@ -7,6 +7,7 @@ import json
 import tempfile
 from pathlib import Path
 import zipfile
+import logging
 
 import pandas as pd
 import streamlit as st
@@ -27,6 +28,9 @@ from utils.google_drive_utils import (
 )
 from googleapiclient.errors import HttpError
 
+
+# Configuração de logging
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Estado da aplicação
@@ -150,6 +154,7 @@ def sidebar(empresas: dict[str, str]) -> str | None:
         empresa = st.selectbox("Empresa", ["-"] + list(empresas.keys()))
         if empresa and empresa != "-":
             cnpj = empresas[empresa]
+            log.info("Empresa selecionada: %s", empresa)
         else:
             cnpj = None
 
@@ -166,13 +171,25 @@ def sidebar(empresas: dict[str, str]) -> str | None:
             disabled = empresa == "-"
             if st.button("Buscar XMLs do Drive", disabled=disabled) and empresa and empresa != "-":
                 try:
+                    log.info("Iniciando download dos XMLs para %s", empresa)
                     service = criar_servico_drive()
                     download_dir = tempfile.mkdtemp(prefix="download_")
                     xml_paths = baixar_xmls_empresa_zip(
                         service, ROOT_FOLDER_ID, empresa, download_dir
                     )
+                    log.info(
+                        "Arquivos XML baixados: %s",
+                        [Path(p).name for p in xml_paths],
+                    )
                     st.session_state.download_dir = download_dir
+                except FileNotFoundError as exc:
+                    log.error("Arquivo ou pasta não encontrada: %s", exc)
+                    st.warning(str(exc))
+                except zipfile.BadZipFile as exc:
+                    log.error("ZIP inválido para %s: %s", empresa, exc)
+                    st.warning(f"Arquivo ZIP inválido: {exc}")
                 except HttpError as exc:  # pragma: no cover - depende do ambiente
+                    log.error("Falha ao acessar Drive: %s", exc)
                     st.warning(f"Falha ao acessar Drive: {exc}")
             elif disabled:
                 st.warning("Selecione uma empresa antes de buscar os XMLs do Drive")
