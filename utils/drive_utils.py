@@ -112,6 +112,15 @@ def baixar_xmls_empresa_zip(
     os.makedirs(destino, exist_ok=True)
     zip_path = os.path.join(destino, "empresa.zip")
     baixar_arquivo(service, alvo["id"], zip_path)
+    try:
+        import zipfile
+
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(destino)
+    except zipfile.BadZipFile as exc:
+        raise ValueError(
+            f"Arquivo ZIP inválido para a empresa '{nome_empresa}'"
+        ) from exc
 
     xmls = [
         os.path.join(destino, f)
@@ -119,5 +128,5 @@ def baixar_xmls_empresa_zip(
         if f.lower().endswith(".xml")
     ]
     if not xmls:
-        raise RuntimeError(f"Nenhum XML encontrado em {destino}")
+        raise FileNotFoundError(f"Nenhum XML encontrado em {destino}")
     return xmls
