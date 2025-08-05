@@ -97,36 +97,27 @@ def baixar_xmls_empresa_zip(
     nome_empresa: str,
     destino: str,
 ) -> List[str]:
-    """Baixa ``xmls_atualizados.zip`` da pasta da empresa e extrai os XMLs."""
-
+    """Baixa o arquivo ``*.zip`` da pasta da empresa e retorna os XMLs extraídos."""
     empresa_id = _buscar_subpasta_id(service, pasta_principal_id, nome_empresa)
     if not empresa_id:
         raise FileNotFoundError(
             f"Pasta da empresa '{nome_empresa}' não encontrada no Drive"
         )
 
-    os.makedirs(destino, exist_ok=True)
-
     arquivos = listar_arquivos(service, empresa_id)
-    zip_info = next(
-        (a for a in arquivos if a["name"].lower() == "xmls_atualizados.zip"),
-        None,
-    )
-    if not zip_info:
+    alvo = next((a for a in arquivos if a["name"].lower().endswith(".zip")), None)
+    if not alvo:
         return []
 
-    zip_path = os.path.join(destino, zip_info["name"])
-    baixar_arquivo(service, zip_info["id"], zip_path)
+    os.makedirs(destino, exist_ok=True)
+    zip_path = os.path.join(destino, "empresa.zip")
+    baixar_arquivo(service, alvo["id"], zip_path)
 
-    import zipfile
-
-    xmls: List[str] = []
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        for name in zf.namelist():
-            if name.lower().endswith(".xml"):
-                base = os.path.basename(name)
-                caminho = os.path.join(destino, base)
-                with zf.open(name) as src, open(caminho, "wb") as out:
-                    out.write(src.read())
-                xmls.append(caminho)
+    xmls = [
+        os.path.join(destino, f)
+        for f in os.listdir(destino)
+        if f.lower().endswith(".xml")
+    ]
+    if not xmls:
+        raise RuntimeError(f"Nenhum XML encontrado em {destino}")
     return xmls

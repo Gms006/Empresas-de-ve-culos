@@ -1,7 +1,6 @@
 import os
 import io
 import logging
-import zipfile
 from typing import Dict, List, Tuple
 import json
 from google.oauth2 import service_account
@@ -75,26 +74,6 @@ def _list_files(service, folder_id: str) -> List[dict]:
     return files
 
 
-def _download_files(service, folder_id: str, dest_dir: str) -> List[str]:
-    """Baixa todos os arquivos XML da pasta para ``dest_dir`` (sem subpastas)."""
-    os.makedirs(dest_dir, exist_ok=True)
-    files = _list_files(service, folder_id)
-    xml_paths: List[str] = []
-    for f in files:
-        if f.get('mimeType') == 'application/vnd.google-apps.folder':
-            # Ignorar quaisquer pastas; XMLs devem estar diretamente na pasta raiz
-            continue
-        if not f['name'].lower().endswith('.xml'):
-            continue
-        request = service.files().get_media(fileId=f['id'])
-        path = os.path.join(dest_dir, f['name'])
-        fh = io.FileIO(path, 'wb')
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-        xml_paths.append(path)
-    return xml_paths
 
 def _read_index(service, company_id: str) -> Tuple[Dict[str, Dict], str | None]:
     """Lê o arquivo ``index_arquivos.json`` da empresa."""
