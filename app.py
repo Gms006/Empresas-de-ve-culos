@@ -159,7 +159,7 @@ def show_home() -> None:
     st.set_page_config(layout="wide", page_title="Home - Emp. de Veículos")
 
     st.sidebar.title("Filtros")
-    st.sidebar.page_link("painel.py", label="Importar notas via Drive")
+    st.sidebar.page_link("pages/painel.py", label="Importar notas via Drive")
     empresas_list = _empresas_list()
     empresa = st.sidebar.selectbox("Empresa", empresas_list)
     mes_inicio, mes_fim = st.sidebar.slider("Mês", 1, 12, (1, 12))
@@ -196,7 +196,7 @@ def show_reports() -> None:
     st.set_page_config(layout="wide", page_title="Relatórios - Emp. de Veículos")
 
     st.sidebar.title("Filtros")
-    st.sidebar.page_link("painel.py", label="Importar notas via Drive")
+    st.sidebar.page_link("pages/painel.py", label="Importar notas via Drive")
     empresas_list = _empresas_list()
     empresa = st.sidebar.selectbox("Empresa", empresas_list)
     data_ini = date.today().replace(month=1, day=1)
