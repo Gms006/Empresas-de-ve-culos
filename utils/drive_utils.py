@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-import unicodedata
+import logging
 from typing import List, Optional
 
 import json
@@ -113,10 +113,37 @@ def baixar_xmls_empresa_zip(
         )
 
     arquivos = listar_arquivos(service, empresa_id)
-    alvo = next((a for a in arquivos if a["name"].lower().endswith(".zip")), None)
-    if not alvo:
+    arquivos_zip = [a for a in arquivos if a["name"].lower().endswith(".zip")]
+    if not arquivos_zip:
         return []
 
+    zip_config = os.getenv("NOME_ARQUIVO_ZIP")
+    if len(arquivos_zip) > 1:
+        if zip_config:
+            alvo = next((a for a in arquivos_zip if a["name"] == zip_config), None)
+            if not alvo:
+                logging.warning(
+                    "Nenhum ZIP corresponde ao nome configurado '%s' para a empresa '%s'",
+                    zip_config,
+                    nome_empresa,
+                )
+                raise FileNotFoundError(
+                    f"Arquivo ZIP '{zip_config}' não encontrado para a empresa '{nome_empresa}'",
+                )
+        else:
+            nomes = [a["name"] for a in arquivos_zip]
+            logging.warning(
+                "Múltiplos arquivos ZIP encontrados para a empresa '%s': %s",
+                nome_empresa,
+                nomes,
+            )
+            raise RuntimeError(
+                "Configure NOME_ARQUIVO_ZIP para selecionar o arquivo desejado.",
+            )
+    else:
+        alvo = arquivos_zip[0]
+
+    logging.info("Arquivo ZIP escolhido: %s", alvo["name"])
     os.makedirs(destino, exist_ok=True)
     zip_path = os.path.join(destino, "empresa.zip")
     baixar_arquivo(service, alvo["id"], zip_path)
@@ -127,14 +154,16 @@ def baixar_xmls_empresa_zip(
             zf.extractall(destino)
     except zipfile.BadZipFile as exc:
         raise ValueError(
-            f"Arquivo ZIP inválido para a empresa '{nome_empresa}'"
+            f"Arquivo ZIP inválido para a empresa '{nome_empresa}'",
         ) from exc
 
     xmls = [
-        os.path.join(destino, f)
-        for f in os.listdir(destino)
+        os.path.join(root, f)
+        for root, _, files in os.walk(destino)
+        for f in files
         if f.lower().endswith(".xml")
     ]
     if not xmls:
+        logging.warning("Nenhum XML encontrado após a extração em %s", destino)
         raise FileNotFoundError(f"Nenhum XML encontrado em {destino}")
     return xmls
