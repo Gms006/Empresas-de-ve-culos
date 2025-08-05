@@ -1,15 +1,20 @@
 import pandas as pd
 import json
 import os
+import logging
 
 # Caminho para a pasta de configurações
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config')
+
+# Logger
+log = logging.getLogger(__name__)
 
 # Carregar Configuração com fallback
 try:
     with open(os.path.join(CONFIG_PATH, 'layout_colunas.json'), encoding='utf-8') as f:
         LAYOUT = json.load(f)
-except Exception:
+except (FileNotFoundError, json.JSONDecodeError) as exc:
+    log.warning(f"Falha ao carregar layout_colunas.json: {exc}")
     # Define um layout padrao caso ocorra erro na leitura
     LAYOUT = {
         "CFOP": {"tipo": "str", "ordem": 1},
@@ -41,18 +46,28 @@ def configurar_planilha(df):
         if col not in df.columns:
             df[col] = None
 
-    # Aplicar Tipagem
+    # Aplicar Tipagem com logs de conversão
     for col, props in LAYOUT.items():
         tipo = props["tipo"]
         if col in df.columns:
+            serie = df[col]
+            antes_na = serie.isna().sum()
             if tipo == "float":
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+                convertido = pd.to_numeric(serie, errors='coerce')
             elif tipo == "int":
-                df[col] = pd.to_numeric(df[col], errors='coerce').astype('Int64')
+                convertido = pd.to_numeric(serie, errors='coerce')
+                convertido = convertido.astype('Int64')
             elif tipo == "date":
-                df[col] = pd.to_datetime(df[col], errors='coerce')
+                convertido = pd.to_datetime(serie, errors='coerce')
             else:
-                df[col] = df[col].astype(str)
+                convertido = serie.astype(str)
+            depois_na = convertido.isna().sum()
+            coercoes = max(0, depois_na - antes_na)
+            if coercoes:
+                log.warning(
+                    f"{coercoes} valores inválidos convertidos para NaN na coluna {col}"
+                )
+            df[col] = convertido
 
     # Ordenar colunas conforme 'ordem'
     ordenadas = sorted(LAYOUT.items(), key=lambda x: x[1]['ordem'])

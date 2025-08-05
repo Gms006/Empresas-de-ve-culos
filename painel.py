@@ -13,6 +13,7 @@ import streamlit as st
 
 from modules.estoque_veiculos import processar_xmls
 from modules.configurador_planilha import configurar_planilha
+from utils.validacao_utils import validar_campos_obrigatorios
 from modules.transformadores_veiculos import (
     gerar_alertas_auditoria,
     gerar_estoque_fiscal,
@@ -24,6 +25,7 @@ from utils.google_drive_utils import (
     baixar_xmls_empresa_zip,
     criar_servico_drive,
 )
+from googleapiclient.errors import HttpError
 
 
 # ---------------------------------------------------------------------------
@@ -86,7 +88,7 @@ def _upload_manual(files) -> list[str]:
                             with open(extracted, "wb") as out_f:
                                 out_f.write(zf.read(name))
                             paths.append(str(extracted))
-            except Exception as exc:  # pragma: no cover - apenas log
+            except zipfile.BadZipFile as exc:  # pragma: no cover - apenas log
                 st.error(f"Erro ao extrair {f.name}: {exc}")
         else:
             paths.append(str(dest))
@@ -101,12 +103,15 @@ def _processar_arquivos(xml_paths: list[str], cnpj_empresa: str) -> pd.DataFrame
     if not xml_paths:
         return pd.DataFrame()
     df = processar_xmls(xml_paths, cnpj_empresa)
-    return configurar_planilha(df)
+    df = configurar_planilha(df)
+    validar_campos_obrigatorios(df)
+    return df
 
 
 def _executar_pipeline(xml_paths: list[str], cnpj_empresa: str) -> None:
     st.session_state["erros_xml"] = []
     df_config = _processar_arquivos(xml_paths, cnpj_empresa)
+    st.session_state.df_configurado = df_config
     
     if df_config.empty:
         st.session_state.processado = False
@@ -166,7 +171,7 @@ def sidebar(empresas: dict[str, str]) -> str | None:
                         service, ROOT_FOLDER_ID, empresa, download_dir
                     )
                     st.session_state.download_dir = download_dir
-                except Exception as exc:  # pragma: no cover - depende do ambiente
+                except HttpError as exc:  # pragma: no cover - depende do ambiente
                     st.warning(f"Falha ao acessar Drive: {exc}")
         st.session_state.xml_paths = xml_paths
         st.session_state.cnpj_empresa = cnpj or ""
