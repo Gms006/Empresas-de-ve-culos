@@ -163,7 +163,8 @@ def sidebar(empresas: dict[str, str]) -> str | None:
             if files:
                 xml_paths = _upload_manual(files)
         else:
-            if st.button("Buscar XMLs do Drive") and empresa:
+            disabled = empresa == "-"
+            if st.button("Buscar XMLs do Drive", disabled=disabled) and empresa and empresa != "-":
                 try:
                     service = criar_servico_drive()
                     download_dir = tempfile.mkdtemp(prefix="download_")
@@ -173,6 +174,8 @@ def sidebar(empresas: dict[str, str]) -> str | None:
                     st.session_state.download_dir = download_dir
                 except HttpError as exc:  # pragma: no cover - depende do ambiente
                     st.warning(f"Falha ao acessar Drive: {exc}")
+            elif disabled:
+                st.warning("Selecione uma empresa antes de buscar os XMLs do Drive")
         st.session_state.xml_paths = xml_paths
         st.session_state.cnpj_empresa = cnpj or ""
         return cnpj
