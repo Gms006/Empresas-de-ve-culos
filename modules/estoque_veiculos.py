@@ -5,7 +5,6 @@ import xml.etree.ElementTree as ET
 import json
 import re
 import logging
-import streamlit as st
 from modules.configurador_planilha import configurar_planilha
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union, Tuple
@@ -338,11 +337,19 @@ def safe_parse_xml(xml_path):
         logging.error(f"Erro de leitura em {xml_path}: {e}")
         return None, f"IOError: {xml_path} -> {e}"
 
-def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
-    """Extrai dados de um arquivo XML de NFe."""
+def extrair_dados_xml(
+    xml_path: str, erros: Optional[List[str]] = None
+) -> List[Dict[str, Any]]:
+    """Extrai dados de um arquivo XML de NFe.
+
+    ``erros`` é uma lista opcional onde mensagens de erro serão acumuladas.
+    """
     tree, err = safe_parse_xml(xml_path)
     if err:
-        st.session_state.setdefault("erros_xml", []).append(err)
+        if erros is not None:
+            erros.append(err)
+        else:
+            log.warning(err)
         return []
     try:
         log.info(f"Processando XML: {xml_path}")
@@ -570,15 +577,19 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
         log.error(traceback.format_exc())
         return []
 
-def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) -> pd.DataFrame:
+def processar_xmls(
+    xml_paths: List[str],
+    cnpj_empresa: Union[str, List[str]],
+    erros: Optional[List[str]] = None,
+) -> pd.DataFrame:
     """Processa múltiplos arquivos XML e retorna um DataFrame consolidado."""
     todos_registros = []
     total_xmls = len(xml_paths)
     log.info(f"Iniciando processamento de {total_xmls} arquivos XML")
-    
+
     # Usar paralelismo para processamento mais rápido com muitos arquivos XML
-    use_parallel = total_xmls > 10
-    
+    use_parallel = total_xmls > 10 and erros is None
+
     if use_parallel:
         try:
             # Importação condicional para não depender desta lib se não for usada
@@ -605,7 +616,7 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
     if not use_parallel:
         for i, xml_path in enumerate(xml_paths, 1):
             log.info(f"Processando arquivo {i}/{total_xmls}: {xml_path}")
-            registros = extrair_dados_xml(xml_path)
+            registros = extrair_dados_xml(xml_path, erros)
             if registros:
                 todos_registros.extend(registros)
                 log.info(f"Extraídos {len(registros)} registros do arquivo {i}")
