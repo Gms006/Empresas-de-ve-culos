@@ -33,7 +33,11 @@ def _load_vendidos_data() -> pd.DataFrame:
             "icms_venda",
             "lucro_apurado",
         ]
-        return pd.DataFrame(columns=colunas)
+        df = pd.DataFrame(columns=colunas)
+        # garante que as colunas de data tenham tipo datetime para uso de ``.dt``
+        df["data_venda"] = pd.to_datetime(df["data_venda"])
+        df["data_compra"] = pd.to_datetime(df["data_compra"])
+        return df
 
 
 @st.cache_data
@@ -54,7 +58,9 @@ def _load_estoque_data() -> pd.DataFrame:
             "nota_compra",
             "icms_compra",
         ]
-        return pd.DataFrame(columns=colunas)
+        df = pd.DataFrame(columns=colunas)
+        df["data_compra"] = pd.to_datetime(df["data_compra"])
+        return df
 
 
 def _empresas_list() -> list[str]:
