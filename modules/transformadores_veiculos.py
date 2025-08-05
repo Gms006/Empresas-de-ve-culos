@@ -46,7 +46,13 @@ def gerar_estoque_fiscal(df_entrada, df_saida):
         merge_cols.append('Empresa CNPJ')
 
     # Remover duplicidades explícitas de saída para evitar múltiplas associações
+    antes = len(df_saida)
     df_saida = df_saida.drop_duplicates(subset=merge_cols)
+    removidas = antes - len(df_saida)
+    if removidas:
+        log.info(
+            f"Removidas {removidas} linhas duplicadas na saída com base em {merge_cols}"
+        )
 
     # Usar junção externa para identificar saídas sem entradas
     df_estoque = pd.merge(

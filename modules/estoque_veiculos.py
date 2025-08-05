@@ -320,14 +320,23 @@ def safe_parse_xml(xml_path):
         logging.warning(f"XML não encontrado, pulando: {xml_path}")
         return None, f"Não encontrado: {xml_path}"
     try:
-        tree = ET.parse(xml_path)
-        return tree, None
-    except ET.ParseError as e:
-        logging.error(f"Erro de parse em {xml_path}: {e}")
-        return None, f"ParseError: {xml_path} -> {e}"
-    except Exception as e:
-        logging.error(f"Erro inesperado ao processar {xml_path}: {e}")
-        return None, f"Outro erro: {xml_path} -> {e}"
+        with open(xml_path, "rb") as f:
+            data = f.read()
+        for enc in ("utf-8", "latin-1", "iso-8859-1"):
+            try:
+                text = data.decode(enc)
+                tree = ET.ElementTree(ET.fromstring(text))
+                return tree, None
+            except UnicodeDecodeError:
+                continue
+            except ET.ParseError as e:
+                logging.error(f"Erro de parse em {xml_path}: {e}")
+                return None, f"ParseError: {xml_path} -> {e}"
+        logging.error(f"Falha de encoding ao ler {xml_path}")
+        return None, f"EncodingError: {xml_path}"
+    except OSError as e:
+        logging.error(f"Erro de leitura em {xml_path}: {e}")
+        return None, f"IOError: {xml_path} -> {e}"
 
 def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
     """Extrai dados de um arquivo XML de NFe."""
@@ -544,12 +553,18 @@ def extrair_dados_xml(xml_path: str) -> List[Dict[str, Any]]:
                 log.warning(f"Erro ao processar valor do item: {e}")
                 dados["Valor Item"] = None
 
+            for campo_obg in ["Chassi", "Placa", "CFOP", "Valor Total", "Data Emissão"]:
+                if not dados.get(campo_obg):
+                    log.warning(
+                        f"Campo obrigatório '{campo_obg}' ausente no item {i} do XML {xml_path}"
+                    )
+
             registros.append(dados)
 
         log.info(f"Total de {len(registros)} registros extraídos do XML")
         return registros
 
-    except Exception as e:
+    except (ET.ParseError, ValueError, AttributeError, KeyError) as e:
         log.error(f"Erro ao processar {xml_path}: {e}")
         import traceback
         log.error(traceback.format_exc())
@@ -580,8 +595,10 @@ def processar_xmls(xml_paths: List[str], cnpj_empresa: Union[str, List[str]]) ->
                 if registros:
                     todos_registros.extend(registros)
                     
-        except Exception as e:
-            log.warning(f"Erro no processamento paralelo: {e}. Usando processamento sequencial.")
+        except (OSError, ValueError) as e:
+            log.warning(
+                f"Erro no processamento paralelo: {e}. Usando processamento sequencial."
+            )
             use_parallel = False
     
     # Processamento sequencial como fallback ou opção principal
