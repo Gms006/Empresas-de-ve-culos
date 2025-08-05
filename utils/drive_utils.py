@@ -43,15 +43,22 @@ def criar_servico_drive():
 def _buscar_subpasta_id(service, parent_id: str, nome: str) -> Optional[str]:
     """Retorna o ID de uma subpasta de ``parent_id`` com o ``nome`` informado."""
 
+    def _normalizar(texto: str) -> str:
+        texto_norm = unicodedata.normalize("NFD", texto)
+        texto_sem_acento = "".join(
+            c for c in texto_norm if unicodedata.category(c) != "Mn"
+        )
+        return texto_sem_acento.casefold()
+
     query = (
         f"'{parent_id}' in parents and "
         "mimeType='application/vnd.google-apps.folder' and "
-        f"name='{nome}' and trashed=false"
+        "trashed=false"
     )
     res = service.files().list(q=query, fields="files(id,name)").execute()
-    arquivos = res.get("files", [])
-    if arquivos:
-        return arquivos[0]["id"]
+    for f in res.get("files", []):
+        if _normalizar(f["name"]) == _normalizar(nome):
+            return f["id"]
     return None
 
 
@@ -122,6 +129,33 @@ def baixar_xmls_empresa_zip(
         return []
     log.info("Arquivo ZIP encontrado: %s (id=%s)", alvo["name"], alvo["id"])
 
+    zip_config = os.getenv("NOME_ARQUIVO_ZIP")
+    if len(arquivos_zip) > 1:
+        if zip_config:
+            alvo = next((a for a in arquivos_zip if a["name"] == zip_config), None)
+            if not alvo:
+                logging.warning(
+                    "Nenhum ZIP corresponde ao nome configurado '%s' para a empresa '%s'",
+                    zip_config,
+                    nome_empresa,
+                )
+                raise FileNotFoundError(
+                    f"Arquivo ZIP '{zip_config}' não encontrado para a empresa '{nome_empresa}'",
+                )
+        else:
+            nomes = [a["name"] for a in arquivos_zip]
+            logging.warning(
+                "Múltiplos arquivos ZIP encontrados para a empresa '%s': %s",
+                nome_empresa,
+                nomes,
+            )
+            raise RuntimeError(
+                "Configure NOME_ARQUIVO_ZIP para selecionar o arquivo desejado.",
+            )
+    else:
+        alvo = arquivos_zip[0]
+
+    logging.info("Arquivo ZIP escolhido: %s", alvo["name"])
     os.makedirs(destino, exist_ok=True)
     zip_path = os.path.join(destino, "empresa.zip")
     baixar_arquivo(service, alvo["id"], zip_path)
@@ -137,8 +171,9 @@ def baixar_xmls_empresa_zip(
         raise
 
     xmls = [
-        os.path.join(destino, f)
-        for f in os.listdir(destino)
+        os.path.join(root, f)
+        for root, _, files in os.walk(destino)
+        for f in files
         if f.lower().endswith(".xml")
     ]
     if not xmls:
