@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import logging
 import zipfile
+import unicodedata
 from typing import List, Optional
 
 import json
