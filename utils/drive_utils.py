@@ -6,6 +6,7 @@ import os
 import logging
 import zipfile
 import unicodedata
+from pathlib import Path
 from typing import List, Optional
 
 import json
@@ -104,6 +105,16 @@ def baixar_arquivo(service, file_id: str, destino: str) -> None:
                 break
 
 
+def safe_extract_all(zf: zipfile.ZipFile, dest: str) -> None:
+    """Extrai os arquivos do ZIP em ``dest`` com verificação contra path traversal."""
+    dest_abs = os.path.abspath(dest)
+    for member in zf.namelist():
+        member_path = os.path.abspath(os.path.join(dest, member))
+        if not member_path.startswith(dest_abs):
+            raise Exception(f"Arquivo malicioso: {member}")
+        zf.extract(member, dest)
+
+
 def baixar_xmls_empresa_zip(
     service,
     pasta_principal_id: str,
@@ -157,25 +168,28 @@ def baixar_xmls_empresa_zip(
 
     log.info("Arquivo ZIP escolhido: %s (id=%s)", alvo["name"], alvo["id"])
     os.makedirs(destino, exist_ok=True)
-    zip_path = os.path.join(destino, "empresa.zip")
+    zip_path = os.path.join(destino, alvo["name"])
     baixar_arquivo(service, alvo["id"], zip_path)
     log.info("Download concluído: %s", zip_path)
+    zip_dest = os.path.join(destino, Path(alvo["name"]).stem)
     try:
         with zipfile.ZipFile(zip_path) as zf:
             log.info("Conteúdo do ZIP: %s", zf.namelist())
-            zf.extractall(destino)
+            safe_extract_all(zf, zip_dest)
     except zipfile.BadZipFile as exc:
         log.exception(
             "Falha ao processar ZIP para a empresa '%s'", nome_empresa
         )
         raise
 
-    xmls = [
-        os.path.join(root, f)
-        for root, _, files in os.walk(destino)
-        for f in files
-        if f.lower().endswith(".xml")
-    ]
+    xmls = sorted(
+        [
+            os.path.join(root, f)
+            for root, _, files in os.walk(zip_dest)
+            for f in files
+            if f.lower().endswith(".xml")
+        ]
+    )
     if not xmls:
         log.error("Nenhum XML encontrado em %s", destino)
         raise FileNotFoundError(f"Nenhum XML encontrado em {destino}")

@@ -28,7 +28,7 @@ def test_baixar_xmls_empresa_zip(monkeypatch, tmp_path, caplog):
 
     with caplog.at_level(logging.INFO):
         xmls = du.baixar_xmls_empresa_zip(None, "root", "Empresa", tmp_path)
-    assert xmls == [str(tmp_path / "sub" / "nfe1.xml")]
+    assert xmls == [str(tmp_path / "qualquer" / "sub" / "nfe1.xml")]
     assert any("qualquer.zip" in r.message for r in caplog.records)
 
 
@@ -73,4 +73,4 @@ def test_multiplos_zips_com_config(monkeypatch, tmp_path):
     monkeypatch.setenv("NOME_ARQUIVO_ZIP", "b.zip")
 
     xmls = du.baixar_xmls_empresa_zip(None, "root", "Empresa", tmp_path)
-    assert xmls == [str(tmp_path / "nfe.xml")]
+    assert xmls == [str(tmp_path / "b" / "nfe.xml")]
