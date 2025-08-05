@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import unicodedata
 from typing import List, Optional
 
 import json
@@ -38,15 +39,22 @@ def criar_servico_drive():
 def _buscar_subpasta_id(service, parent_id: str, nome: str) -> Optional[str]:
     """Retorna o ID de uma subpasta de ``parent_id`` com o ``nome`` informado."""
 
+    def _normalizar(texto: str) -> str:
+        texto_norm = unicodedata.normalize("NFD", texto)
+        texto_sem_acento = "".join(
+            c for c in texto_norm if unicodedata.category(c) != "Mn"
+        )
+        return texto_sem_acento.casefold()
+
     query = (
         f"'{parent_id}' in parents and "
         "mimeType='application/vnd.google-apps.folder' and "
-        f"name='{nome}' and trashed=false"
+        "trashed=false"
     )
     res = service.files().list(q=query, fields="files(id,name)").execute()
-    arquivos = res.get("files", [])
-    if arquivos:
-        return arquivos[0]["id"]
+    for f in res.get("files", []):
+        if _normalizar(f["name"]) == _normalizar(nome):
+            return f["id"]
     return None
 
 
