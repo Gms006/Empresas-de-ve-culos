@@ -123,11 +123,10 @@ def baixar_xmls_empresa_zip(
     log.info("Pasta da empresa encontrada: %s", empresa_id)
 
     arquivos = listar_arquivos(service, empresa_id)
-    alvo = next((a for a in arquivos if a["name"].lower().endswith(".zip")), None)
-    if not alvo:
+    arquivos_zip = [a for a in arquivos if a["name"].lower().endswith(".zip")]
+    if not arquivos_zip:
         log.warning("Nenhum arquivo ZIP encontrado para '%s'", nome_empresa)
         return []
-    log.info("Arquivo ZIP encontrado: %s (id=%s)", alvo["name"], alvo["id"])
 
     zip_config = os.getenv("NOME_ARQUIVO_ZIP")
     if len(arquivos_zip) > 1:
@@ -155,7 +154,7 @@ def baixar_xmls_empresa_zip(
     else:
         alvo = arquivos_zip[0]
 
-    logging.info("Arquivo ZIP escolhido: %s", alvo["name"])
+    log.info("Arquivo ZIP escolhido: %s (id=%s)", alvo["name"], alvo["id"])
     os.makedirs(destino, exist_ok=True)
     zip_path = os.path.join(destino, "empresa.zip")
     baixar_arquivo(service, alvo["id"], zip_path)
