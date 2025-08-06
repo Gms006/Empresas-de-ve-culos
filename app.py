@@ -155,11 +155,26 @@ def _df_to_excel(df: pd.DataFrame) -> bytes:
     return output.getvalue()
 
 
+def _link_painel() -> None:
+    """Adiciona link para o painel de importação, ignorando falhas.
+
+    Quando a aplicação é executada fora do comando ``streamlit run`` o registro
+    de páginas não está disponível e ``st.sidebar.page_link`` levanta
+    ``KeyError``. Para evitar que a interface quebre nesses cenários o erro é
+    simplesmente ignorado.
+    """
+
+    try:  # pragma: no cover - depende de execução via Streamlit
+        st.sidebar.page_link("pages/painel.py", label="Importar notas via Drive")
+    except KeyError:
+        pass
+
+
 def show_home() -> None:
     st.set_page_config(layout="wide", page_title="Home - Emp. de Veículos")
 
     st.sidebar.title("Filtros")
-    st.sidebar.page_link("pages/painel.py", label="Importar notas via Drive")
+    _link_painel()
     empresas_list = _empresas_list()
     empresa = st.sidebar.selectbox("Empresa", empresas_list)
     mes_inicio, mes_fim = st.sidebar.slider("Mês", 1, 12, (1, 12))
@@ -196,7 +211,7 @@ def show_reports() -> None:
     st.set_page_config(layout="wide", page_title="Relatórios - Emp. de Veículos")
 
     st.sidebar.title("Filtros")
-    st.sidebar.page_link("pages/painel.py", label="Importar notas via Drive")
+    _link_painel()
     empresas_list = _empresas_list()
     empresa = st.sidebar.selectbox("Empresa", empresas_list)
     data_ini = date.today().replace(month=1, day=1)
