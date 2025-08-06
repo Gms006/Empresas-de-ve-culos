@@ -176,7 +176,10 @@ def show_home() -> None:
     st.sidebar.title("Filtros")
     _link_painel()
     empresas_list = _empresas_list()
-    empresa = st.sidebar.selectbox("Empresa", empresas_list)
+    default = st.session_state.get("selected_empresa")
+    index = empresas_list.index(default) if default in empresas_list else 0
+    empresa = st.sidebar.selectbox("Empresa", empresas_list, index=index)
+    st.session_state["selected_empresa"] = empresa
     mes_inicio, mes_fim = st.sidebar.slider("Mês", 1, 12, (1, 12))
 
     df_v = _load_vendidos_data().copy()
@@ -213,7 +216,10 @@ def show_reports() -> None:
     st.sidebar.title("Filtros")
     _link_painel()
     empresas_list = _empresas_list()
-    empresa = st.sidebar.selectbox("Empresa", empresas_list)
+    default = st.session_state.get("selected_empresa")
+    index = empresas_list.index(default) if default in empresas_list else 0
+    empresa = st.sidebar.selectbox("Empresa", empresas_list, index=index)
+    st.session_state["selected_empresa"] = empresa
     data_ini = date.today().replace(month=1, day=1)
     data_fim = date.today()
     start_date, end_date = st.sidebar.date_input("Período", [data_ini, data_fim])

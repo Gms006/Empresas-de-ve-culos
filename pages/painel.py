@@ -59,13 +59,21 @@ def _init_session() -> None:
 # ---------------------------------------------------------------------------
 
 def _carregar_empresas() -> dict[str, str]:
+    """Retorna um mapeamento ``{nome: cnpj}`` das empresas configuradas."""
+
     path = Path("config/empresas_config.json")
     try:
         with open(path, encoding="utf-8") as f:
-            return json.load(f)
+            dados = json.load(f)
     except FileNotFoundError:
         st.error("Arquivo de configuração das empresas não encontrado.")
         return {}
+
+    empresas: dict[str, str] = {}
+    for nome, cfg in dados.items():
+        cnpjs = cfg.get("cnpj_emitentes", [])
+        empresas[nome] = cnpjs[0] if cnpjs else ""
+    return empresas
 
 # ---------------------------------------------------------------------------
 # Processamento de dados
@@ -158,11 +166,13 @@ def sidebar(empresas: dict[str, str]) -> str | None:
         empresa = st.selectbox("Empresa", ["-"] + list(empresas.keys()))
         if empresa and empresa != "-":
             cnpj = empresas[empresa]
+            st.session_state["selected_empresa"] = empresa
             log.info("Empresa selecionada: %s", empresa)
         else:
             cnpj = None
 
         origem = st.radio("Origem dos XMLs", ["Upload Manual", "Google Drive"], key="origem")
+
         xml_paths: list[str] = st.session_state.get("xml_paths", [])
         if origem == "Upload Manual":
             files = st.file_uploader(
