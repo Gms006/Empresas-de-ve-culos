@@ -25,7 +25,6 @@ try:
 except Exception:
     CONFIG_EXTRACAO = {"xpath_campos": {}}
 
-
 def _formatar_cnpj_cpf(valor: str) -> str:
     """Formata CPF ou CNPJ adicionando máscaras padrão."""
     if not valor:
