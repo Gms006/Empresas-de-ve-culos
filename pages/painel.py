@@ -163,7 +163,6 @@ def sidebar(empresas: dict[str, str]) -> str | None:
             cnpj = None
 
         origem = st.radio("Origem dos XMLs", ["Upload Manual", "Google Drive"], key="origem")
-
         xml_paths: list[str] = st.session_state.get("xml_paths", [])
         if origem == "Upload Manual":
             files = st.file_uploader(
