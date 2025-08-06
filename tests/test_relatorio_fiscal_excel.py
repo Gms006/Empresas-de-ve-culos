@@ -1,6 +1,7 @@
 import os
 import sys
 import pandas as pd
+import json
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, ROOT)
@@ -92,3 +93,21 @@ def test_extracao_dados_basicos_xml(tmp_path):
     assert row["Série"] == "1"
     assert row["Data"] == "2024-01-01"
     assert row["CFOP"] == "5101"
+
+
+def test_config_contains_required_fields():
+    with open(os.path.join(ROOT, "config", "extracao_config.json"), encoding="utf-8") as f:
+        cfg = json.load(f)
+    campos = cfg.get("xpath_campos", {})
+    for campo in [
+        "CPF/CNPJ",
+        "Razão Social",
+        "UF",
+        "Município",
+        "Endereço",
+        "Número Documento",
+        "Série",
+        "Data",
+        "CFOP",
+    ]:
+        assert campo in campos, f"Campo {campo} ausente nas configurações"

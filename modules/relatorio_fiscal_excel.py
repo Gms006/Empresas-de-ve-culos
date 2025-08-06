@@ -2,6 +2,8 @@ import pandas as pd
 from typing import Dict, Optional
 import xml.etree.ElementTree as ET
 import re
+import os
+import json
 
 # Colunas finais do relatório
 COLUMNS = [
@@ -15,6 +17,13 @@ COLUMNS = [
     "Alíquota PIS", "Valor PIS", "Alíquota COFINS", "Valor COFINS",
 ]
 
+# Carregar configuração de extração de XML
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config")
+try:
+    with open(os.path.join(CONFIG_PATH, "extracao_config.json"), encoding="utf-8") as f:
+        CONFIG_EXTRACAO = json.load(f)
+except Exception:
+    CONFIG_EXTRACAO = {"xpath_campos": {}}
 
 def _formatar_cnpj_cpf(valor: str) -> str:
     """Formata CPF ou CNPJ adicionando máscaras padrão."""
@@ -36,37 +45,67 @@ def _extrair_dados_xml_basicos(xml_path: str) -> Dict[str, str]:
         ns_match = re.match(r"\{(.+?)\}", root.tag)
         ns = {"nfe": ns_match.group(1)} if ns_match else {}
 
-        def tx(path: str) -> str:
+        def tx(path: Optional[str]) -> str:
+            if not path:
+                return ""
             return root.findtext(path, namespaces=ns) or ""
 
-        cnpj = tx(".//nfe:dest/nfe:CNPJ") or tx(".//nfe:dest/nfe:CPF")
-        endereco = " ".join(
-            filter(
-                None,
-                [
-                    tx(".//nfe:dest/nfe:enderDest/nfe:xLgr"),
-                    tx(".//nfe:dest/nfe:enderDest/nfe:nro"),
-                ],
-            )
-        ).strip()
+        xpath_campos = CONFIG_EXTRACAO.get("xpath_campos", {})
 
-        data = tx(".//nfe:ide/nfe:dhEmi") or tx(".//nfe:ide/nfe:dEmi")
+        cnpj = ""
+        for key in ("CPF/CNPJ", "Destinatário CNPJ", "Destinatário CPF"):
+            cnpj = tx(xpath_campos.get(key))
+            if cnpj:
+                break
+        if not cnpj:
+            cnpj = tx(".//nfe:dest/nfe:CNPJ") or tx(".//nfe:dest/nfe:CPF")
+
+        razao = (
+            tx(xpath_campos.get("Razão Social"))
+            or tx(xpath_campos.get("Destinatário Nome"))
+            or tx(".//nfe:dest/nfe:xNome")
+        )
+        uf = tx(xpath_campos.get("UF")) or tx(".//nfe:dest/nfe:enderDest/nfe:UF")
+        municipio = tx(xpath_campos.get("Município")) or tx(
+            ".//nfe:dest/nfe:enderDest/nfe:xMun"
+        )
+        logradouro = tx(xpath_campos.get("Endereço")) or tx(
+            ".//nfe:dest/nfe:enderDest/nfe:xLgr"
+        )
+        numero = tx(xpath_campos.get("Número Endereço")) or tx(
+            ".//nfe:dest/nfe:enderDest/nfe:nro"
+        )
+        endereco = " ".join(filter(None, [logradouro, numero])).strip()
+
+        numero_documento = (
+            tx(xpath_campos.get("Número Documento"))
+            or tx(xpath_campos.get("Número NF"))
+            or tx(".//nfe:ide/nfe:nNF")
+        )
+        serie = tx(xpath_campos.get("Série")) or tx(".//nfe:ide/nfe:serie")
+        data = (
+            tx(xpath_campos.get("Data"))
+            or tx(xpath_campos.get("Data Emissão"))
+            or tx(".//nfe:ide/nfe:dhEmi")
+            or tx(".//nfe:ide/nfe:dEmi")
+        )
         if data:
             try:
                 data = pd.to_datetime(data).date().isoformat()
             except Exception:
                 pass
+        cfop = tx(xpath_campos.get("CFOP")) or tx(".//nfe:det/nfe:prod/nfe:CFOP")
 
         return {
             "CPF/CNPJ": _formatar_cnpj_cpf(cnpj),
-            "Razão Social": tx(".//nfe:dest/nfe:xNome"),
-            "UF": tx(".//nfe:dest/nfe:enderDest/nfe:UF"),
-            "Município": tx(".//nfe:dest/nfe:enderDest/nfe:xMun"),
+            "Razão Social": razao,
+            "UF": uf,
+            "Município": municipio,
             "Endereço": endereco,
-            "Número Documento": tx(".//nfe:ide/nfe:nNF"),
-            "Série": tx(".//nfe:ide/nfe:serie"),
+            "Número Documento": numero_documento,
+            "Série": serie,
             "Data": data,
-            "CFOP": tx(".//nfe:det/nfe:prod/nfe:CFOP"),
+            "CFOP": cfop,
         }
     except Exception:
         return {}
