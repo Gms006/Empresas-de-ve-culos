@@ -11,7 +11,7 @@ import modules.estoque_veiculos as ev
 def test_processar_xmls_uses_configurador(monkeypatch):
     called = {"called": False}
 
-    def fake_extrair(_):
+    def fake_extrair(_, erros=None):
         return [{
             "Emitente CNPJ/CPF": "111",
             "Destinatário CNPJ/CPF": "222",
@@ -29,7 +29,7 @@ def test_processar_xmls_uses_configurador(monkeypatch):
                 df[col] = None
         return df
 
-    monkeypatch.setattr(ev, "extrair_dados_xml", lambda path: fake_extrair(path))
+    monkeypatch.setattr(ev, "extrair_dados_xml", fake_extrair)
     monkeypatch.setattr(ev, "configurar_planilha", fake_config)
 
     df = ev.processar_xmls(["file.xml"], "111")
