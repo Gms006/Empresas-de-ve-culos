@@ -12,7 +12,16 @@
     "ICMS": ".//nfe:imposto/nfe:ICMS//nfe:vICMS",
     "CHAVE XML": ".//nfe:infNFe/@Id",
     "Produto": ".//nfe:det/nfe:prod/nfe:xProd",
-    "Natureza Operação": ".//nfe:ide/nfe:natOp"
+    "Natureza Operação": ".//nfe:ide/nfe:natOp",
+    "CPF/CNPJ": ".//nfe:dest/nfe:CNPJ",
+    "Razão Social": ".//nfe:dest/nfe:xNome",
+    "UF": ".//nfe:dest/nfe:enderDest/nfe:UF",
+    "Município": ".//nfe:dest/nfe:enderDest/nfe:xMun",
+    "Endereço": ".//nfe:dest/nfe:enderDest/nfe:xLgr",
+    "Número Endereço": ".//nfe:dest/nfe:enderDest/nfe:nro",
+    "Número Documento": ".//nfe:ide/nfe:nNF",
+    "Série": ".//nfe:ide/nfe:serie",
+    "Data": ".//nfe:ide/nfe:dhEmi"
   },
   "regex_extracao": {
     "Chassi": "(?:CHASSI|CHAS|CH)[\\s:;.-]*([A-HJ-NPR-Z0-9]{17})",
