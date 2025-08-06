@@ -1,5 +1,7 @@
 import pandas as pd
 from typing import Dict, Optional
+import xml.etree.ElementTree as ET
+import re
 
 # Colunas finais do relatório
 COLUMNS = [
@@ -12,6 +14,71 @@ COLUMNS = [
     "Valor Unitário", "CST PIS/COFINS", "Base de Calculo PIS/COFINS",
     "Alíquota PIS", "Valor PIS", "Alíquota COFINS", "Valor COFINS",
 ]
+
+
+def _formatar_cnpj_cpf(valor: str) -> str:
+    """Formata CPF ou CNPJ adicionando máscaras padrão."""
+    if not valor:
+        return ""
+    digitos = re.sub(r"\D", "", valor)
+    if len(digitos) == 14:
+        return f"{digitos[:2]}.{digitos[2:5]}.{digitos[5:8]}/{digitos[8:12]}-{digitos[12:]}"
+    if len(digitos) == 11:
+        return f"{digitos[:3]}.{digitos[3:6]}.{digitos[6:9]}-{digitos[9:]}"
+    return valor
+
+
+def _extrair_dados_xml_basicos(xml_path: str) -> Dict[str, str]:
+    """Extrai campos básicos necessários para o relatório fiscal de um XML."""
+    try:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        ns_match = re.match(r"\{(.+?)\}", root.tag)
+        ns = {"nfe": ns_match.group(1)} if ns_match else {}
+
+        def tx(path: str) -> str:
+            return root.findtext(path, namespaces=ns) or ""
+
+        cnpj = tx(".//nfe:dest/nfe:CNPJ") or tx(".//nfe:dest/nfe:CPF")
+        endereco = " ".join(
+            filter(
+                None,
+                [
+                    tx(".//nfe:dest/nfe:enderDest/nfe:xLgr"),
+                    tx(".//nfe:dest/nfe:enderDest/nfe:nro"),
+                ],
+            )
+        ).strip()
+
+        data = tx(".//nfe:ide/nfe:dhEmi") or tx(".//nfe:ide/nfe:dEmi")
+        if data:
+            try:
+                data = pd.to_datetime(data).date().isoformat()
+            except Exception:
+                pass
+
+        return {
+            "CPF/CNPJ": _formatar_cnpj_cpf(cnpj),
+            "Razão Social": tx(".//nfe:dest/nfe:xNome"),
+            "UF": tx(".//nfe:dest/nfe:enderDest/nfe:UF"),
+            "Município": tx(".//nfe:dest/nfe:enderDest/nfe:xMun"),
+            "Endereço": endereco,
+            "Número Documento": tx(".//nfe:ide/nfe:nNF"),
+            "Série": tx(".//nfe:ide/nfe:serie"),
+            "Data": data,
+            "CFOP": tx(".//nfe:det/nfe:prod/nfe:CFOP"),
+        }
+    except Exception:
+        return {}
+
+
+def _resolver_xml_path(row: pd.Series) -> Optional[str]:
+    """Determina a coluna do caminho do XML disponível na linha."""
+    for col in ["XML Path", "XML Path_saida", "XML Path_entrada"]:
+        path = row.get(col)
+        if isinstance(path, str) and path:
+            return path
+    return None
 
 def gerar_relatorio_fiscal_excel(
     df_notas: pd.DataFrame,
@@ -37,6 +104,32 @@ def gerar_relatorio_fiscal_excel(
         DataFrame resultante com as colunas calculadas e ordenadas.
     """
     df = df_notas.copy()
+
+    # Tentar preencher campos essenciais a partir do XML, se ausentes
+    campos_xml = [
+        "CPF/CNPJ",
+        "Razão Social",
+        "UF",
+        "Município",
+        "Endereço",
+        "Número Documento",
+        "Série",
+        "Data",
+        "CFOP",
+    ]
+
+    for idx, row in df.iterrows():
+        if any(not row.get(c) for c in campos_xml):
+            xml_path = _resolver_xml_path(row)
+            if not xml_path:
+                continue
+            dados = _extrair_dados_xml_basicos(xml_path)
+            for campo in campos_xml:
+                valor_atual = row.get(campo)
+                if (campo not in df.columns) or (valor_atual in (None, "") or (isinstance(valor_atual, float) and pd.isna(valor_atual))):
+                    novo_valor = dados.get(campo)
+                    if novo_valor not in (None, ""):
+                        df.at[idx, campo] = novo_valor
 
     # Garantir que Valor Contábil corresponde ao Valor Produtos
     df["Valor Contábil"] = df["Valor Produtos"]
