@@ -5,6 +5,12 @@ import streamlit as st
 from datetime import date
 from io import BytesIO
 
+# ``set_page_config`` deve ser chamado antes de qualquer outro elemento
+# Streamlit.  Ele define layout amplo para toda a aplicação e um título
+# genérico; os cabeçalhos específicos são exibidos dentro de cada função
+# de página.
+st.set_page_config(layout="wide", page_title="Emp. de Veículos")
+
 
 @st.cache_data
 def _load_vendidos_data() -> pd.DataFrame:
@@ -171,9 +177,11 @@ def _link_painel() -> None:
 
 
 def show_home() -> None:
-    st.set_page_config(layout="wide", page_title="Home - Emp. de Veículos")
-
+    st.title("Home - Emp. de Veículos")
     st.sidebar.title("Filtros")
+    # Atualiza cache para refletir possíveis importações realizadas no painel
+    _load_vendidos_data.clear()
+    _load_estoque_data.clear()
     _link_painel()
     empresas_list = _empresas_list()
     default = st.session_state.get("selected_empresa")
@@ -211,9 +219,11 @@ def show_home() -> None:
 
 
 def show_reports() -> None:
-    st.set_page_config(layout="wide", page_title="Relatórios - Emp. de Veículos")
-
+    st.title("Relatórios - Emp. de Veículos")
     st.sidebar.title("Filtros")
+    # Sempre recarrega os dados para garantir que estejam atualizados
+    _load_vendidos_data.clear()
+    _load_estoque_data.clear()
     _link_painel()
     empresas_list = _empresas_list()
     default = st.session_state.get("selected_empresa")
