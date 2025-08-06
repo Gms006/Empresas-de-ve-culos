@@ -21,6 +21,7 @@ from modules.transformadores_veiculos import (
     gerar_kpis,
     gerar_resumo_mensal,
 )
+from modules.relatorio_fiscal_excel import gerar_relatorio_fiscal_excel
 from utils.google_drive_utils import (
     ROOT_FOLDER_ID,
     baixar_xmls_empresa_zip,
@@ -241,6 +242,18 @@ def render_relatorios() -> None:
         "Exportar Vendas",
         data=_exportar_excel(vendidos),
         file_name="vendas.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    # Geração do relatório fiscal com cálculos de tributos
+    df_fiscal = vendidos.copy()
+    df_fiscal["Valor Produtos"] = df_fiscal.get("Valor Venda", 0)
+    buffer_fiscal = io.BytesIO()
+    gerar_relatorio_fiscal_excel(df_fiscal, buffer_fiscal)
+    st.download_button(
+        "Exportar Relatório Fiscal",
+        data=buffer_fiscal.getvalue(),
+        file_name="relatorio_fiscal.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
