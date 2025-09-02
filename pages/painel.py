@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 import zipfile
 import logging
+import unicodedata
 
 import pandas as pd
 import streamlit as st
@@ -44,6 +45,7 @@ def _init_session() -> None:
         "df_estoque": pd.DataFrame(),
         "df_alertas": pd.DataFrame(),
         "df_resumo": pd.DataFrame(),
+        "df_configurado": pd.DataFrame(),
         "kpis": {},
         "xml_paths": [],
         "cnpj_empresa": "",
@@ -161,6 +163,41 @@ def _exportar_excel(df: pd.DataFrame) -> bytes:
     return buffer.getvalue()
 
 
+def _normalizar_coluna(nome: str) -> str:
+    """Remove acentos e normaliza para minúsculas."""
+    return unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode().lower()
+
+
+def _exportar_planilha_completa(df: pd.DataFrame) -> bytes:
+    """Gera arquivo Excel com abas de entradas e saídas formatadas."""
+    buffer = io.BytesIO()
+
+    if "Tipo Nota" in df.columns:
+        df_entrada = df[df["Tipo Nota"] == "Entrada"].copy()
+        df_saida = df[df["Tipo Nota"] == "Saída"].copy()
+    else:
+        df_entrada = df.copy()
+        df_saida = pd.DataFrame()
+
+    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+        workbook = writer.book
+        currency_fmt = workbook.add_format({"num_format": "R$ #,##0.00"})
+        percent_fmt = workbook.add_format({"num_format": "0.00%"})
+
+        for sheet_name, df_sheet in [("entradas", df_entrada), ("saídas", df_saida)]:
+            df_sheet.to_excel(writer, sheet_name=sheet_name, index=False)
+            worksheet = writer.sheets[sheet_name]
+            for idx, col in enumerate(df_sheet.columns):
+                if pd.api.types.is_numeric_dtype(df_sheet[col]):
+                    nome_norm = _normalizar_coluna(col)
+                    if any(k in nome_norm for k in ["aliquota", "percent", "porcent"]):
+                        worksheet.set_column(idx, idx, None, percent_fmt)
+                    elif any(k in nome_norm for k in ["valor", "preco", "preço", "total", "lucro", "base"]):
+                        worksheet.set_column(idx, idx, None, currency_fmt)
+
+    return buffer.getvalue()
+
+
 def sidebar(empresas: dict[str, str]) -> str | None:
     with st.sidebar:
         st.header("Configurações")
@@ -222,6 +259,14 @@ def render_relatorios() -> None:
     df = st.session_state.df_estoque
     kpis = st.session_state.kpis
     _mostrar_kpis(kpis)
+
+    df_completo = st.session_state.get("df_configurado", pd.DataFrame())
+    st.download_button(
+        "Exportar Planilha Completa",
+        data=_exportar_planilha_completa(df_completo),
+        file_name="planilha_completa.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
     vendidos = df[df["Situação"] == "Vendido"].copy()
     estoque = df[df["Situação"] == "Em Estoque"].copy()
